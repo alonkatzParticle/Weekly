@@ -1,0 +1,39 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { uploadToDropbox, getDropboxToken } from '@/lib/dropbox'
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December']
+const EPOCH = new Date('2025-11-09T00:00:00')
+
+function weekFolder(weekEnding: string): string {
+  const sat = new Date(weekEnding + 'T00:00:00')
+  const sun = new Date(sat)
+  sun.setDate(sat.getDate() + 1)
+  const index = Math.round((sun.getTime() - EPOCH.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1
+  const label = `${MONTHS[sun.getMonth()]}_${sun.getDate()}_${sun.getFullYear()}`
+  return `${String(index).padStart(3, '0')}_${label}`
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const { url, title, memberName, weekEnding } = await req.json()
+    if (!url || !memberName || !weekEnding) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    const token = await getDropboxToken()
+
+    // Create a Windows .url shortcut file (opens in any browser/OS)
+    const fileName = `${(title || url).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)}.url`
+    const content = `[InternetShortcut]\nURL=${url}\n`
+    const buffer = Buffer.from(content, 'utf-8')
+
+    const basePath = (process.env.DROPBOX_PATH ?? '/Weekly Reports').replace(/\/$/, '')
+    const folder = weekFolder(weekEnding)
+    const result = await uploadToDropbox(buffer, fileName, `${basePath}/${folder}/${memberName}`, token)
+
+    return NextResponse.json(result)
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
+}
