@@ -350,6 +350,32 @@ export async function fetchTasksForUser(
   return tasks
 }
 
+export async function fetchAllBoardTasks(
+  boardIds: string[],
+  token: string,
+  force = false,
+): Promise<Array<Omit<MondayTask, 'assignee_id'> & { assignee_ids: string[] }>> {
+  const results = await Promise.allSettled(
+    boardIds.map(id => fetchBoardItems(id, token, force))
+  )
+
+  const tasks: Array<Omit<MondayTask, 'assignee_id'> & { assignee_ids: string[] }> = []
+  results.forEach((result, i) => {
+    if (result.status === 'rejected') {
+      console.error(`Error fetching board ${boardIds[i]}:`, result.reason)
+      return
+    }
+    const { name: boardName, items } = result.value
+    if (!boardName) return
+    for (const item of items) {
+      const task = processTeamItem(item, boardName)
+      if (task) tasks.push(task)
+    }
+  })
+
+  return tasks
+}
+
 export async function fetchTeamTasks(
   boardIds: string[],
   validUserIds: string[],

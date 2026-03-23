@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Clapperboard, Settings } from 'lucide-react'
+import { LayoutDashboard, Clapperboard, Settings, ClipboardList } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface TeamMember {
@@ -13,6 +13,7 @@ interface TeamMember {
 const navLinks = [
   { href: '/', label: 'Weekly Report', icon: LayoutDashboard },
   { href: '/studio', label: 'Studio', icon: Clapperboard },
+  { href: '/status-report', label: 'Status Report', icon: ClipboardList },
 ]
 
 export function AppSidebar() {

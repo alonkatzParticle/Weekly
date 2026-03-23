@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@tailwindcss/typography": "^0.5.19",
     "@types/better-sqlite3": "^7.6.13",
     "@vercel/postgres": "^0.10.0",
     "ai": "^4.3.16",
@@ -19,9 +20,10 @@
     "date-fns": "^3.6.0",
     "dropbox": "^10.34.0",
     "lucide-react": "^0.394.0",
-    "next": "14.2.3",
+    "next": "^14.2.35",
     "react": "^18",
     "react-dom": "^18",
+    "react-markdown": "^10.1.0",
     "recharts": "^2.12.7",
     "tailwind-merge": "^2.3.0"
   },
