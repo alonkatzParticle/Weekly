@@ -1,3 +1,16 @@
+export interface DailyTask {
+  id: string
+  name: string
+  board_name: string
+  assignee_ids: string[]
+  status: string
+  status_color: string | null
+  timeline_end: string | null
+  monday_url: string | null
+}
+
+export const COMPLETED_STATUSES = ['approved', 'completed', 'done', 'for approval', 'sent to client']
+
 export interface MondayTask {
   id: string
   name: string
@@ -444,6 +457,144 @@ export async function fetchTeamTasks(
   })
 
   return tasksByUser
+}
+
+export async function fetchDailyActivity(
+  boardIds: string[],
+  token: string,
+  force = false,
+): Promise<{ completedToday: DailyTask[]; inProgress: DailyTask[] }> {
+  // Use local midnight so we capture changes from start of business day
+  const todayLocalMidnight = new Date()
+  todayLocalMidnight.setHours(0, 0, 0, 0)
+  const from = todayLocalMidnight.toISOString()
+  const to = new Date().toISOString()
+
+  // Fetch board items (uses cache)
+  const boardResults = await Promise.allSettled(
+    boardIds.map(id => fetchBoardItems(id, token, force))
+  )
+
+  // Build itemId → raw item map for cross-referencing assignees/timeline
+  const itemMap = new Map<string, { item: any; boardName: string; statusColors: Record<string, string> }>()
+  boardResults.forEach((result) => {
+    if (result.status === 'rejected') return
+    const { name: boardName, items, statusColors } = result.value
+    if (!boardName) return
+    for (const item of items) {
+      itemMap.set(String(item.id), { item, boardName, statusColors })
+    }
+  })
+
+  // Fetch activity logs for all boards in parallel
+  const completedIds = new Set<string>()
+  const completedTasks: DailyTask[] = []
+
+  await Promise.allSettled(boardIds.map(async (boardId, idx) => {
+    const boardResult = boardResults[idx]
+    if (boardResult.status === 'rejected') return
+    const { name: boardName, statusColors } = boardResult.value
+    if (!boardName) return
+
+    try {
+      const data = await mondayQuery(`
+        query {
+          boards(ids: [${boardId}]) {
+            activity_logs(limit: 500, from: "${from}", to: "${to}") {
+              id event data created_at
+            }
+          }
+        }
+      `, token)
+
+      const logs: any[] = data?.boards?.[0]?.activity_logs ?? []
+
+      for (const log of logs) {
+        if (log.event !== 'update_column_value') continue
+        try {
+          const logData = JSON.parse(log.data ?? '{}')
+          if (logData.column_type !== 'color') continue // status columns only
+          const newStatus: string = logData.value?.label?.text ?? ''
+          if (!COMPLETED_STATUSES.some(s => newStatus.toLowerCase().includes(s))) continue
+
+          const pulseId = String(logData.pulse_id)
+          if (completedIds.has(pulseId)) continue
+          completedIds.add(pulseId)
+
+          // Try to get full details from board item cache
+          const cached = itemMap.get(pulseId)
+          let assignee_ids: string[] = []
+          let timeline_end: string | null = null
+          let monday_url: string | null = null
+
+          if (cached) {
+            const cols: any[] = cached.item.column_values ?? []
+            for (const personCol of cols.filter((c: any) =>
+              c.type === 'multiple-person' || c.type === 'people' || c.id === 'person' || c.id === 'people'
+            )) {
+              if (!personCol?.value) continue
+              try {
+                const pv = JSON.parse(personCol.value)
+                if (pv?.personsAndTeams) {
+                  for (const p of pv.personsAndTeams) {
+                    if (p.id) assignee_ids.push(String(p.id))
+                  }
+                }
+              } catch {}
+            }
+            const timelineCol = cols.find((c: any) => c.type === 'timeline' || c.id === 'timeline')
+            if (timelineCol?.value) {
+              try { timeline_end = JSON.parse(timelineCol.value)?.to ?? null } catch {}
+            }
+            monday_url = cached.item.url ?? null
+          }
+
+          const statusColor = logData.value?.label?.style?.color
+            ?? statusColors[newStatus.toLowerCase()]
+            ?? null
+
+          completedTasks.push({
+            id: pulseId,
+            name: logData.pulse_name ?? 'Unknown task',
+            board_name: boardName,
+            assignee_ids,
+            status: newStatus,
+            status_color: statusColor,
+            timeline_end,
+            monday_url,
+          })
+        } catch {}
+      }
+    } catch (err) {
+      console.error(`[daily] Error fetching activity logs for board ${boardId}:`, err)
+    }
+  }))
+
+  // In Progress: all cached items whose status is NOT completed (regardless of priority)
+  const inProgressTasks: DailyTask[] = []
+  boardResults.forEach((result) => {
+    if (result.status === 'rejected') return
+    const { name: boardName, items, statusColors } = result.value
+    if (!boardName) return
+    for (const item of items) {
+      const task = processTeamItem(item, boardName, statusColors)
+      if (!task) continue
+      if (completedIds.has(task.id)) continue
+      if (COMPLETED_STATUSES.some(s => task.status.toLowerCase().includes(s))) continue
+      inProgressTasks.push({
+        id: task.id,
+        name: task.name,
+        board_name: task.board_name,
+        assignee_ids: task.assignee_ids,
+        status: task.status,
+        status_color: task.status_color,
+        timeline_end: task.timeline_end,
+        monday_url: task.monday_url,
+      })
+    }
+  })
+
+  return { completedToday: completedTasks, inProgress: inProgressTasks }
 }
 
 export async function fetchTimeTracking(

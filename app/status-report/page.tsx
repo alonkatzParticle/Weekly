@@ -18,8 +18,21 @@ interface StatusTask {
   monday_url: string | null
 }
 
+interface DailyTask {
+  id: string
+  name: string
+  board_name: string
+  assignee_ids: string[]
+  assignee_names: string[]
+  status: string
+  status_color: string | null
+  timeline_end: string | null
+  monday_url: string | null
+}
+
 type TasksByBoard = Record<string, StatusTask[]>
 type SortKey = 'priority' | 'timeline'
+type ActiveTab = 'boss' | 'daily'
 
 const PRIORITY_BADGE: Record<string, string> = {
   critical: 'bg-red-100 text-red-700 border border-red-200',
@@ -150,6 +163,9 @@ function sortTasks(tasks: StatusTask[], sortKey: SortKey): StatusTask[] {
 }
 
 export default function StatusReportPage() {
+  const [activeTab, setActiveTab] = useState<ActiveTab>('boss')
+
+  // Boss Update state
   const [tasksByBoard, setTasksByBoard] = useState<TasksByBoard>({})
   const [completedToday, setCompletedToday] = useState<StatusTask[]>([])
   const [loading, setLoading] = useState(true)
@@ -159,6 +175,17 @@ export default function StatusReportPage() {
   const [error, setError] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('priority')
   const [editMode, setEditMode] = useState(false)
+
+  // Daily Update state
+  const [dailyCompleted, setDailyCompleted] = useState<DailyTask[]>([])
+  const [dailyInProgress, setDailyInProgress] = useState<DailyTask[]>([])
+  const [dailyDate, setDailyDate] = useState('')
+  const [dailyLoading, setDailyLoading] = useState(false)
+  const [dailySummaryText, setDailySummaryText] = useState('')
+  const [dailyGenerating, setDailyGenerating] = useState(false)
+  const [dailyCopied, setDailyCopied] = useState(false)
+  const [dailyError, setDailyError] = useState<string | null>(null)
+  const [dailyEditMode, setDailyEditMode] = useState(false)
 
   const fetchTasks = useCallback(async (force = false) => {
     setLoading(true)
@@ -215,13 +242,70 @@ export default function StatusReportPage() {
     }
   }
 
+  const fetchDailyTasks = useCallback(async (force = false) => {
+    setDailyLoading(true)
+    setDailyError(null)
+    try {
+      const res = await fetch(`/api/status-report/daily${force ? '?force=true' : ''}`)
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setDailyCompleted(data.completedToday ?? [])
+      setDailyInProgress(data.inProgress ?? [])
+      setDailyDate(data.date ?? '')
+    } catch (e: any) {
+      setDailyError(e.message)
+    } finally {
+      setDailyLoading(false)
+    }
+  }, [])
+
+  const generateDailySummary = async () => {
+    setDailyGenerating(true)
+    setDailySummaryText('')
+    try {
+      const res = await fetch('/api/status-report/daily-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completedToday: dailyCompleted, inProgress: dailyInProgress, date: dailyDate }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed to generate summary' }))
+        throw new Error(err.error ?? 'Failed to generate summary')
+      }
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let text = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        text += decoder.decode(value, { stream: true })
+        setDailySummaryText(text)
+      }
+    } catch (e: any) {
+      setDailySummaryText(`Error: ${e.message}`)
+    } finally {
+      setDailyGenerating(false)
+    }
+  }
+
   const copyToClipboard = async () => {
     await navigator.clipboard.writeText(summaryText)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // Build status label → hex color map from all tasks (lowercase keys for case-insensitive lookup)
+  useEffect(() => {
+    if (activeTab === 'daily' && dailyCompleted.length === 0 && dailyInProgress.length === 0 && !dailyLoading) {
+      fetchDailyTasks()
+    }
+  }, [activeTab, dailyCompleted.length, dailyInProgress.length, dailyLoading, fetchDailyTasks])
+
+  const copyDailyToClipboard = async () => {
+    await navigator.clipboard.writeText(dailySummaryText)
+    setDailyCopied(true)
+    setTimeout(() => setDailyCopied(false), 2000)
+  }
+
   const statusColorMap = useMemo(() => {
     const map: Record<string, string> = {}
     const allTasks = [...Object.values(tasksByBoard).flat(), ...completedToday]
@@ -231,6 +315,14 @@ export default function StatusReportPage() {
     return map
   }, [tasksByBoard, completedToday])
 
+  const dailyColorMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const t of [...dailyCompleted, ...dailyInProgress]) {
+      if (t.status && t.status_color) map[t.status.toLowerCase()] = t.status_color
+    }
+    return map
+  }, [dailyCompleted, dailyInProgress])
+
   const totalTasks = Object.values(tasksByBoard).reduce((sum, tasks) => sum + tasks.length, 0)
   const boards = Object.keys(sortedTasksByBoard).sort()
 
@@ -238,47 +330,70 @@ export default function StatusReportPage() {
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b bg-white shrink-0">
-        <div>
-          <h1 className="text-xl font-semibold">Status Report</h1>
-          {!loading && (
-            <p className="text-sm text-muted-foreground">
-              {totalTasks} open high/critical priority {totalTasks === 1 ? 'task' : 'tasks'}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Sort toggle */}
-          <div className="flex items-center gap-1 border rounded-md overflow-hidden text-xs">
-            <span className="pl-2 pr-1 text-muted-foreground flex items-center gap-1">
-              <ArrowUpDown className="h-3 w-3" /> Sort
-            </span>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-xl font-semibold">Status Report</h1>
+            {activeTab === 'boss' && !loading && (
+              <p className="text-sm text-muted-foreground">
+                {totalTasks} open high/critical priority {totalTasks === 1 ? 'task' : 'tasks'}
+              </p>
+            )}
+            {activeTab === 'daily' && !dailyLoading && (
+              <p className="text-sm text-muted-foreground">
+                {dailyCompleted.length} completed · {dailyInProgress.length} in progress
+              </p>
+            )}
+          </div>
+          {/* Tab switcher */}
+          <div className="flex items-center border rounded-md overflow-hidden text-xs">
             <button
-              onClick={() => setSortKey('priority')}
-              className={`px-2.5 py-1.5 transition-colors ${sortKey === 'priority' ? 'bg-black text-white' : 'hover:bg-muted/50'}`}
+              onClick={() => setActiveTab('boss')}
+              className={`px-3 py-1.5 transition-colors ${activeTab === 'boss' ? 'bg-black text-white' : 'hover:bg-muted/50'}`}
             >
-              Priority
+              Boss Update
             </button>
             <button
-              onClick={() => setSortKey('timeline')}
-              className={`px-2.5 py-1.5 transition-colors ${sortKey === 'timeline' ? 'bg-black text-white' : 'hover:bg-muted/50'}`}
+              onClick={() => setActiveTab('daily')}
+              className={`px-3 py-1.5 transition-colors ${activeTab === 'daily' ? 'bg-black text-white' : 'hover:bg-muted/50'}`}
             >
-              Due Date
+              Daily Update
             </button>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {activeTab === 'boss' && (
+            <div className="flex items-center gap-1 border rounded-md overflow-hidden text-xs">
+              <span className="pl-2 pr-1 text-muted-foreground flex items-center gap-1">
+                <ArrowUpDown className="h-3 w-3" /> Sort
+              </span>
+              <button
+                onClick={() => setSortKey('priority')}
+                className={`px-2.5 py-1.5 transition-colors ${sortKey === 'priority' ? 'bg-black text-white' : 'hover:bg-muted/50'}`}
+              >
+                Priority
+              </button>
+              <button
+                onClick={() => setSortKey('timeline')}
+                className={`px-2.5 py-1.5 transition-colors ${sortKey === 'timeline' ? 'bg-black text-white' : 'hover:bg-muted/50'}`}
+              >
+                Due Date
+              </button>
+            </div>
+          )}
           <button
-            onClick={() => fetchTasks(true)}
-            disabled={loading}
+            onClick={() => activeTab === 'boss' ? fetchTasks(true) : fetchDailyTasks(true)}
+            disabled={activeTab === 'boss' ? loading : dailyLoading}
             className="flex items-center gap-2 px-3 py-2 rounded-md text-sm border hover:bg-muted/50 disabled:opacity-50 transition-colors"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${(activeTab === 'boss' ? loading : dailyLoading) ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
       </div>
 
-      {error && (
+      {(error || dailyError) && (
         <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700 shrink-0">
-          {error}
+          {activeTab === 'boss' ? error : dailyError}
         </div>
       )}
 
@@ -286,7 +401,106 @@ export default function StatusReportPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Task Lists */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-          {loading ? (
+          {activeTab === 'daily' ? (
+            /* Daily Update left panel */
+            dailyLoading ? (
+              <div className="space-y-5">
+                {[1, 2].map(i => (
+                  <div key={i} className="animate-pulse space-y-2">
+                    <div className="h-3 bg-gray-200 rounded w-1/4 mb-3" />
+                    {[1, 2, 3].map(j => <div key={j} className="h-14 bg-gray-100 rounded-lg" />)}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {dailyCompleted.length > 0 && (
+                  <div>
+                    <h2 className="text-xs font-semibold uppercase tracking-wider text-green-600 mb-2 px-1">
+                      Completed Today ({dailyCompleted.length})
+                    </h2>
+                    <div className="space-y-2">
+                      {dailyCompleted.map(task => (
+                        <div key={task.id} className="flex items-start gap-3 p-3 rounded-lg border bg-green-50 border-green-100">
+                          <div className="flex-1 min-w-0">
+                            <span className="font-medium text-sm">{task.name}</span>
+                            <div className="flex items-center gap-3 mt-1 flex-wrap">
+                              {task.status && (
+                                <span
+                                  className="text-xs px-1.5 py-0.5 rounded font-medium"
+                                  style={task.status_color
+                                    ? { backgroundColor: task.status_color + '22', color: task.status_color, border: `1px solid ${task.status_color}55` }
+                                    : undefined}
+                                >
+                                  {task.status}
+                                </span>
+                              )}
+                              <span className="text-xs text-muted-foreground">{task.board_name}</span>
+                              {task.assignee_names.length > 0 && (
+                                <span className="text-xs text-muted-foreground">{task.assignee_names.join(', ')}</span>
+                              )}
+                            </div>
+                          </div>
+                          {task.monday_url && (
+                            <a href={task.monday_url} target="_blank" rel="noopener noreferrer"
+                              className="shrink-0 text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {dailyCompleted.length === 0 && !dailyLoading && (
+                  <div className="p-3 rounded-lg border bg-gray-50 text-sm text-muted-foreground">
+                    No completed tasks detected today via activity logs.
+                  </div>
+                )}
+                {dailyInProgress.length > 0 && (
+                  <div>
+                    <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 px-1">
+                      In Progress ({dailyInProgress.length})
+                    </h2>
+                    <div className="space-y-2">
+                      {dailyInProgress.map(task => (
+                        <div key={task.id} className="flex items-start gap-3 p-3 rounded-lg border bg-white hover:bg-muted/20 transition-colors">
+                          <div className="flex-1 min-w-0">
+                            <span className="font-medium text-sm">{task.name}</span>
+                            <div className="flex items-center gap-3 mt-1 flex-wrap">
+                              {task.status && (
+                                <span
+                                  className="text-xs px-1.5 py-0.5 rounded font-medium"
+                                  style={task.status_color
+                                    ? { backgroundColor: task.status_color + '22', color: task.status_color, border: `1px solid ${task.status_color}55` }
+                                    : undefined}
+                                >
+                                  {task.status}
+                                </span>
+                              )}
+                              {task.timeline_end && (
+                                <span className="text-xs text-muted-foreground">Due {task.timeline_end}</span>
+                              )}
+                              <span className="text-xs text-muted-foreground">{task.board_name}</span>
+                              {task.assignee_names.length > 0 && (
+                                <span className="text-xs text-muted-foreground">{task.assignee_names.join(', ')}</span>
+                              )}
+                            </div>
+                          </div>
+                          {task.monday_url && (
+                            <a href={task.monday_url} target="_blank" rel="noopener noreferrer"
+                              className="shrink-0 text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          ) : loading ? (
             <div className="space-y-5">
               {[1, 2].map(i => (
                 <div key={i} className="animate-pulse space-y-2">
@@ -365,50 +579,100 @@ export default function StatusReportPage() {
 
         {/* Right: Summary Panel */}
         <div className="w-[460px] border-l flex flex-col bg-gray-50 shrink-0">
-          <div className="px-4 py-3 border-b bg-white flex items-center justify-between shrink-0">
-            <span className="text-sm font-medium">Boss Update</span>
-            <div className="flex items-center gap-2">
-              {summaryText && !generating && (
-                <button
-                  onClick={() => setEditMode(e => !e)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border bg-white hover:bg-muted/50 transition-colors"
-                >
-                  {editMode ? <Eye className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
-                  {editMode ? 'Preview' : 'Edit'}
-                </button>
+          {activeTab === 'boss' ? (
+            <>
+              <div className="px-4 py-3 border-b bg-white flex items-center justify-between shrink-0">
+                <span className="text-sm font-medium">Boss Update</span>
+                <div className="flex items-center gap-2">
+                  {summaryText && !generating && (
+                    <button
+                      onClick={() => setEditMode(e => !e)}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border bg-white hover:bg-muted/50 transition-colors"
+                    >
+                      {editMode ? <Eye className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
+                      {editMode ? 'Preview' : 'Edit'}
+                    </button>
+                  )}
+                  <button
+                    onClick={copyToClipboard}
+                    disabled={!summaryText}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border bg-white hover:bg-muted/50 disabled:opacity-40 transition-colors"
+                  >
+                    {copied ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                  <button
+                    onClick={generateSummary}
+                    disabled={generating || loading || boards.length === 0}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs bg-black text-white hover:bg-gray-800 disabled:opacity-40 transition-colors"
+                  >
+                    {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                    {generating ? 'Generating...' : 'Generate'}
+                  </button>
+                </div>
+              </div>
+              {editMode ? (
+                <textarea
+                  className="flex-1 p-4 text-sm bg-gray-50 resize-none focus:outline-none focus:bg-white transition-colors"
+                  value={summaryText}
+                  onChange={e => setSummaryText(e.target.value)}
+                  autoFocus
+                />
+              ) : summaryText ? (
+                <MarkdownReport text={summaryText} colorMap={statusColorMap} />
+              ) : (
+                <div className="flex-1 p-4 text-sm text-muted-foreground/60">
+                  Click &apos;Generate&apos; to create a brief status update for your boss. You can edit the text before copying.
+                </div>
               )}
-              <button
-                onClick={copyToClipboard}
-                disabled={!summaryText}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border bg-white hover:bg-muted/50 disabled:opacity-40 transition-colors"
-              >
-                {copied ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-              <button
-                onClick={generateSummary}
-                disabled={generating || loading || boards.length === 0}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs bg-black text-white hover:bg-gray-800 disabled:opacity-40 transition-colors"
-              >
-                {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                {generating ? 'Generating...' : 'Generate'}
-              </button>
-            </div>
-          </div>
-          {editMode ? (
-            <textarea
-              className="flex-1 p-4 text-sm bg-gray-50 resize-none focus:outline-none focus:bg-white transition-colors"
-              value={summaryText}
-              onChange={e => setSummaryText(e.target.value)}
-              autoFocus
-            />
-          ) : summaryText ? (
-            <MarkdownReport text={summaryText} colorMap={statusColorMap} />
-
+            </>
           ) : (
-            <div className="flex-1 p-4 text-sm text-muted-foreground/60">
-              Click &apos;Generate&apos; to create a brief status update for your boss. You can edit the text before copying.
-            </div>
+            <>
+              <div className="px-4 py-3 border-b bg-white flex items-center justify-between shrink-0">
+                <span className="text-sm font-medium">Daily Summary</span>
+                <div className="flex items-center gap-2">
+                  {dailySummaryText && !dailyGenerating && (
+                    <button
+                      onClick={() => setDailyEditMode(e => !e)}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border bg-white hover:bg-muted/50 transition-colors"
+                    >
+                      {dailyEditMode ? <Eye className="h-3 w-3" /> : <Pencil className="h-3 w-3" />}
+                      {dailyEditMode ? 'Preview' : 'Edit'}
+                    </button>
+                  )}
+                  <button
+                    onClick={copyDailyToClipboard}
+                    disabled={!dailySummaryText}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border bg-white hover:bg-muted/50 disabled:opacity-40 transition-colors"
+                  >
+                    {dailyCopied ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+                    {dailyCopied ? 'Copied!' : 'Copy'}
+                  </button>
+                  <button
+                    onClick={generateDailySummary}
+                    disabled={dailyGenerating || dailyLoading}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs bg-black text-white hover:bg-gray-800 disabled:opacity-40 transition-colors"
+                  >
+                    {dailyGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                    {dailyGenerating ? 'Generating...' : 'Generate'}
+                  </button>
+                </div>
+              </div>
+              {dailyEditMode ? (
+                <textarea
+                  className="flex-1 p-4 text-sm bg-gray-50 resize-none focus:outline-none focus:bg-white transition-colors"
+                  value={dailySummaryText}
+                  onChange={e => setDailySummaryText(e.target.value)}
+                  autoFocus
+                />
+              ) : dailySummaryText ? (
+                <MarkdownReport text={dailySummaryText} colorMap={dailyColorMap} />
+              ) : (
+                <div className="flex-1 p-4 text-sm text-muted-foreground/60">
+                  Click &apos;Generate&apos; to create a daily update for your boss based on today&apos;s activity.
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
