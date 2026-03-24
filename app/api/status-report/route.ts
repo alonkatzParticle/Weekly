@@ -48,11 +48,14 @@ export async function GET(req: NextRequest) {
       return /high|critical/.test(priority) && /done|complet/.test(status) && t.timeline_end === today
     })
 
+    const toTitleCase = (name: string) =>
+      name.replace(/\b\w+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+
     const resolveNames = (tasks: typeof allTasks) =>
       tasks.map(t => ({
         ...t,
         assignee_names: t.assignee_ids
-          .map((id: string) => memberMap[id] ?? null)
+          .map((id: string) => memberMap[id] ? toTitleCase(memberMap[id]) : null)
           .filter(Boolean) as string[],
       }))
 

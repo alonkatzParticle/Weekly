@@ -7,6 +7,7 @@ export interface MondayTask {
   timeline_end: string | null
   priority: string
   status: string
+  status_color: string | null
   monday_url: string | null
   dropbox_link: string | null
 }
@@ -47,8 +48,9 @@ const EXCLUDED_GROUPS = ['form requests', 'ready for assignment']
 interface BoardMeta {
   name: string
   timelineColId: string | null
-  // IDs of columns we actually need to fetch on every item (reduces response size)
   neededColumnIds: string[]
+  // status label (lowercase) → Monday hex color, built from settings_str
+  statusColors: Record<string, string>
   fetchedAt: number
 }
 const BOARD_META_TTL = 60 * 60 * 1000
@@ -58,6 +60,7 @@ const BOARD_META_TTL = 60 * 60 * 1000
 interface BoardCache {
   name: string
   items: any[]
+  statusColors: Record<string, string>
   fetchedAt: number
 }
 const BOARD_ITEM_TTL = 5 * 60 * 1000 // 5 minutes
@@ -77,11 +80,11 @@ async function fetchBoardMeta(boardId: string, token: string): Promise<BoardMeta
   if (cached && Date.now() - cached.fetchedAt < BOARD_META_TTL) return cached
 
   const data = await mondayQuery(
-    `query { boards(ids: [${boardId}]) { name columns { id type title } } }`,
+    `query { boards(ids: [${boardId}]) { name columns { id type title settings_str } } }`,
     token
   )
   const board = data?.boards?.[0]
-  if (!board?.name) return { name: '', timelineColId: null, neededColumnIds: [], fetchedAt: Date.now() }
+  if (!board?.name) return { name: '', timelineColId: null, neededColumnIds: [], statusColors: {}, fetchedAt: Date.now() }
 
   const cols: any[] = board.columns ?? []
 
@@ -110,10 +113,25 @@ async function fetchBoardMeta(boardId: string, token: string): Promise<BoardMeta
   if (statusCol) needed.add(statusCol.id)
   dropboxCols.forEach(c => needed.add(c.id))
 
+  // Build status label → hex color map from the status column's settings_str
+  const statusColors: Record<string, string> = {}
+  const allStatusCols = cols.filter((c: any) => c.type === 'status')
+  for (const col of allStatusCols) {
+    try {
+      const settings = JSON.parse(col.settings_str ?? '{}')
+      const labels: Record<string, string> = settings.labels ?? {}
+      const colors: Record<string, { color: string }> = settings.labels_colors ?? {}
+      for (const [idx, label] of Object.entries(labels)) {
+        if (colors[idx]?.color) statusColors[label.toLowerCase()] = colors[idx].color
+      }
+    } catch {}
+  }
+
   const meta: BoardMeta = {
     name: board.name,
     timelineColId: timelineCol?.id ?? null,
     neededColumnIds: Array.from(needed),
+    statusColors,
     fetchedAt: Date.now(),
   }
   boardMetaCache.set(boardId, meta)
@@ -141,7 +159,7 @@ async function fetchBoardItems(boardId: string, token: string, force = false): P
   const promise = (async () => {
     try {
       const meta = await fetchBoardMeta(boardId, token)
-      if (!meta.name) return { name: '', items: [], fetchedAt: Date.now() }
+      if (!meta.name) return { name: '', items: [], statusColors: {}, fetchedAt: Date.now() }
 
       // Only fetch the columns we actually need — reduces payload by ~5x vs all columns
       const colIdsArg = meta.neededColumnIds.length > 0
@@ -179,7 +197,7 @@ async function fetchBoardItems(boardId: string, token: string, force = false): P
         items.push(...(next?.next_items_page?.items ?? []))
       }
 
-      const result: BoardCache = { name: meta.name, items, fetchedAt: Date.now() }
+      const result: BoardCache = { name: meta.name, items, statusColors: meta.statusColors, fetchedAt: Date.now() }
       boardItemCache.set(boardId, result)
       return result
     } finally {
@@ -191,7 +209,7 @@ async function fetchBoardItems(boardId: string, token: string, force = false): P
   return promise
 }
 
-function processItem(item: any, boardName: string, mondayUserId: string): MondayTask | null {
+function processItem(item: any, boardName: string, mondayUserId: string, statusColors: Record<string, string> = {}): MondayTask | null {
   const groupTitle = item.group?.title?.toLowerCase() ?? ''
   if (EXCLUDED_GROUPS.some(g => groupTitle.includes(g))) return null
 
@@ -250,12 +268,13 @@ function processItem(item: any, boardName: string, mondayUserId: string): Monday
     timeline_end: timelineEnd,
     priority: priorityCol?.text ?? 'Normal',
     status: statusCol?.text ?? '',
+    status_color: statusColors[(statusCol?.text ?? '').toLowerCase()] ?? null,
     monday_url: item.url ?? null,
     dropbox_link: dropboxLink,
   }
 }
 
-function processTeamItem(item: any, boardName: string): (Omit<MondayTask, 'assignee_id'> & { assignee_ids: string[] }) | null {
+function processTeamItem(item: any, boardName: string, statusColors: Record<string, string> = {}): (Omit<MondayTask, 'assignee_id'> & { assignee_ids: string[] }) | null {
   const groupTitle = item.group?.title?.toLowerCase() ?? ''
   if (EXCLUDED_GROUPS.some(g => groupTitle.includes(g))) return null
 
@@ -316,6 +335,7 @@ function processTeamItem(item: any, boardName: string): (Omit<MondayTask, 'assig
     timeline_end: timelineEnd,
     priority: priorityCol?.text ?? 'Normal',
     status: statusCol?.text ?? '',
+    status_color: statusColors[(statusCol?.text ?? '').toLowerCase()] ?? null,
     monday_url: item.url ?? null,
     dropbox_link: dropboxLink,
   }
@@ -339,10 +359,10 @@ export async function fetchTasksForUser(
       console.error(`Error fetching board ${boardIds[i]}:`, result.reason)
       return
     }
-    const { name: boardName, items } = result.value
+    const { name: boardName, items, statusColors } = result.value
     if (!boardName) return
     for (const item of items) {
-      const task = processItem(item, boardName, mondayUserId)
+      const task = processItem(item, boardName, mondayUserId, statusColors)
       if (task) tasks.push(task)
     }
   })
@@ -365,10 +385,10 @@ export async function fetchAllBoardTasks(
       console.error(`Error fetching board ${boardIds[i]}:`, result.reason)
       return
     }
-    const { name: boardName, items } = result.value
+    const { name: boardName, items, statusColors } = result.value
     if (!boardName) return
     for (const item of items) {
-      const task = processTeamItem(item, boardName)
+      const task = processTeamItem(item, boardName, statusColors)
       if (task) tasks.push(task)
     }
   })
@@ -396,11 +416,11 @@ export async function fetchTeamTasks(
       console.error(`Error fetching board ${boardIds[i]}:`, result.reason)
       return
     }
-    const { name: boardName, items } = result.value
+    const { name: boardName, items, statusColors } = result.value
     if (!boardName) return
 
     for (const item of items) {
-      const teamTask = processTeamItem(item, boardName)
+      const teamTask = processTeamItem(item, boardName, statusColors)
       if (!teamTask) continue
 
       for (const assignee of teamTask.assignee_ids) {
@@ -414,6 +434,7 @@ export async function fetchTeamTasks(
             timeline_end: teamTask.timeline_end,
             priority: teamTask.priority,
             status: teamTask.status,
+            status_color: teamTask.status_color,
             monday_url: teamTask.monday_url,
             dropbox_link: teamTask.dropbox_link,
           })

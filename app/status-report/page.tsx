@@ -12,6 +12,7 @@ interface StatusTask {
   assignee_names: string[]
   priority: string
   status: string
+  status_color: string | null
   timeline_start: string | null
   timeline_end: string | null
   monday_url: string | null
@@ -32,6 +33,19 @@ function priorityBadge(priority: string) {
   return PRIORITY_BADGE[priority.toLowerCase()] ?? 'bg-gray-100 text-gray-500 border border-gray-200'
 }
 
+const STATUS_COLORS: { match: RegExp; classes: string }[] = [
+  { match: /done|complet|finish/i,          classes: 'bg-green-100 text-green-700 border border-green-200' },
+  { match: /stuck|blocked|problem|issue/i,  classes: 'bg-red-100 text-red-700 border border-red-200' },
+  { match: /review|approval|feedback/i,     classes: 'bg-purple-100 text-purple-700 border border-purple-200' },
+  { match: /progress|working|active/i,      classes: 'bg-blue-100 text-blue-700 border border-blue-200' },
+  { match: /wait|hold|pending/i,            classes: 'bg-yellow-100 text-yellow-700 border border-yellow-200' },
+  { match: /.*/,                            classes: 'bg-gray-100 text-gray-600 border border-gray-200' },
+]
+
+function statusBadge(status: string) {
+  return STATUS_COLORS.find(s => s.match.test(status))!.classes
+}
+
 const SECTION_STYLES: { match: RegExp; card: string; label: string; dot: string }[] = [
   { match: /complet/i,  card: 'bg-green-50 border-green-200', label: 'text-green-700', dot: 'bg-green-400' },
   { match: /critical/i, card: 'bg-red-50 border-red-200',     label: 'text-red-700',   dot: 'bg-red-400' },
@@ -43,22 +57,59 @@ function getSectionStyle(heading: string) {
   return SECTION_STYLES.find(s => s.match.test(heading))!
 }
 
-const mdComponents = (dotColor: string): React.ComponentProps<typeof ReactMarkdown>['components'] => ({
-  h3: ({ children }) => <p className="text-xs font-semibold text-gray-800 mt-2 mb-0.5">{children}</p>,
-  p:  ({ children }) => <p className="text-xs text-gray-600 leading-relaxed mb-1">{children}</p>,
-  ul: ({ children }) => <ul className="space-y-1">{children}</ul>,
-  li: ({ children }) => (
+// Pre-process markdown: convert [Status Text] → `Status Text` so we can style it via the code renderer
+function preprocessMarkdown(text: string): string {
+  return text.replace(/\[([^\]]+)\]/g, '`$1`')
+}
+
+function statusCodeBadge(text: string, colorMap: Record<string, string>) {
+  const hex = colorMap[text.toLowerCase()]
+  if (hex) {
+    return (
+      <span
+        className="inline-block text-[11px] px-1.5 py-0.5 rounded font-medium"
+        style={{ backgroundColor: hex + '22', color: hex, border: `1px solid ${hex}55` }}
+      >
+        {text}
+      </span>
+    )
+  }
+  return <span className={`inline-block text-[11px] px-1.5 py-0.5 rounded font-medium ${statusBadge(text)}`}>{text}</span>
+}
+
+const baseComponents = (dotColor: string, colorMap: Record<string, string>): React.ComponentProps<typeof ReactMarkdown>['components'] => ({
+  h3:     ({ children }) => <p className="text-xs font-semibold text-gray-800 mt-2 mb-0.5">{children}</p>,
+  p:      ({ children }) => <p className="text-xs text-gray-600 leading-relaxed mb-1">{children}</p>,
+  ul:     ({ children }) => <ul className="space-y-1">{children}</ul>,
+  li:     ({ children }) => (
     <li className="flex gap-2 text-xs text-gray-700 leading-snug">
       <span className={`mt-[5px] h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} />
       <span>{children}</span>
     </li>
   ),
+  code:   ({ children }) => statusCodeBadge(String(children), colorMap),
   strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
-  hr: () => null,
+  hr:     () => null,
 })
 
-function MarkdownReport({ text }: { text: string }) {
-  // Split into: optional preamble (before first ##) + sections (## heading + content)
+const inProgressComponents = (dotColor: string, colorMap: Record<string, string>): React.ComponentProps<typeof ReactMarkdown>['components'] => ({
+  ...baseComponents(dotColor, colorMap),
+  h3: ({ children }) => (
+    <p className="text-sm font-bold text-gray-900 mt-4 mb-1 first:mt-0">{children}</p>
+  ),
+  h4: ({ children }) => (
+    <p className="text-xs font-semibold text-gray-700 mt-2 mb-0.5 ml-2">{children}</p>
+  ),
+  ul: ({ children }) => <ul className="space-y-1 ml-4">{children}</ul>,
+  li: ({ children }) => (
+    <li className="flex gap-2 text-xs text-gray-600 leading-snug">
+      <span className={`mt-[5px] h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} />
+      <span>{children}</span>
+    </li>
+  ),
+})
+
+function MarkdownReport({ text, colorMap }: { text: string; colorMap: Record<string, string> }) {
   const rawSections = text.split(/^(?=## )/m)
   const title = rawSections[0].replace(/^#\s+/, '').trim()
   const sections = rawSections.slice(1).map(block => {
@@ -71,10 +122,13 @@ function MarkdownReport({ text }: { text: string }) {
       {title && <p className="text-xs font-medium text-gray-400 px-1 pb-0.5">{title}</p>}
       {sections.map(({ heading, content }) => {
         const style = getSectionStyle(heading)
+        const components = /progress/i.test(heading)
+          ? inProgressComponents(style.dot, colorMap)
+          : baseComponents(style.dot, colorMap)
         return (
           <div key={heading} className={`rounded-lg border px-3 pt-2.5 pb-3 ${style.card}`}>
             <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${style.label}`}>{heading}</p>
-            <ReactMarkdown components={mdComponents(style.dot)}>{content}</ReactMarkdown>
+            <ReactMarkdown components={components}>{preprocessMarkdown(content)}</ReactMarkdown>
           </div>
         )
       })}
@@ -166,6 +220,16 @@ export default function StatusReportPage() {
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
+  // Build status label → hex color map from all tasks (lowercase keys for case-insensitive lookup)
+  const statusColorMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    const allTasks = [...Object.values(tasksByBoard).flat(), ...completedToday]
+    for (const t of allTasks) {
+      if (t.status && t.status_color) map[t.status.toLowerCase()] = t.status_color
+    }
+    return map
+  }, [tasksByBoard, completedToday])
 
   const totalTasks = Object.values(tasksByBoard).reduce((sum, tasks) => sum + tasks.length, 0)
   const boards = Object.keys(sortedTasksByBoard).sort()
@@ -259,7 +323,12 @@ export default function StatusReportPage() {
                         </div>
                         <div className="flex items-center gap-3 mt-1 flex-wrap">
                           {task.status && (
-                            <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                            <span
+                              className="text-xs px-1.5 py-0.5 rounded font-medium"
+                              style={task.status_color
+                                ? { backgroundColor: task.status_color + '22', color: task.status_color, border: `1px solid ${task.status_color}55` }
+                                : undefined}
+                            >
                               {task.status}
                             </span>
                           )}
@@ -334,7 +403,7 @@ export default function StatusReportPage() {
               autoFocus
             />
           ) : summaryText ? (
-            <MarkdownReport text={summaryText} />
+            <MarkdownReport text={summaryText} colorMap={statusColorMap} />
 
           ) : (
             <div className="flex-1 p-4 text-sm text-muted-foreground/60">

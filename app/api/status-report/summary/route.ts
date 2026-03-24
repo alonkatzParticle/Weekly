@@ -12,14 +12,20 @@ export async function POST(req: NextRequest) {
 
     const { tasksByBoard, completedToday = [] } = await req.json()
 
-    const lines: string[] = []
+    // Flatten all tasks across boards, sorted critical first then high
+    const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2 }
+    const allTasks: any[] = []
     for (const [board, tasks] of Object.entries(tasksByBoard as Record<string, any[]>)) {
-      lines.push(`\n**${board}**`)
-      for (const t of tasks) {
-        const assignees = (t.assignee_names as string[])?.join(', ') || 'Unassigned'
-        lines.push(`- ${t.name} | Priority: ${t.priority} | Status: ${t.status} | Assigned: ${assignees}`)
-      }
+      for (const t of tasks) allTasks.push({ ...t, board_name: board })
     }
+    allTasks.sort((a, b) =>
+      (PRIORITY_ORDER[a.priority?.toLowerCase()] ?? 3) - (PRIORITY_ORDER[b.priority?.toLowerCase()] ?? 3)
+    )
+
+    const lines: string[] = allTasks.map(t => {
+      const assignees = (t.assignee_names as string[])?.join(', ') || 'Unassigned'
+      return `- ${t.name} | ${t.priority} | ${t.status || 'No status'} | ${t.board_name} | Assigned: ${assignees}`
+    })
 
     const completedLines: string[] = []
     for (const t of completedToday as any[]) {
@@ -36,13 +42,17 @@ export async function POST(req: NextRequest) {
 Below are the high and critical priority tasks currently open, plus any high/critical tasks completed today. Write a concise, professional status update using markdown. Structure it with these sections:
 - # [title]
 - ## Completed Today — only if there are completed tasks; celebrate wins briefly
-- ## Critical Items — only if any critical priority tasks exist; flag urgency clearly
-- ## In Progress — a tight summary of open high-priority work grouped by board
+- ## Critical Items — only if any critical priority tasks exist. Group tasks by assignee using ### Assignee Name subsections. For each task include its status in brackets: "Task Name [Status]"
+- ## In Progress — open high-priority work structured as:
+  ### Board/Team Name
+  #### Person Name
+  - **Task Name** - one short sentence description [Status]
+  Group by board first (### heading), then by person within that board (#### heading). Every task must show status in brackets.
 - ## Next Steps — 2-3 action items max
 
 Keep it scannable and direct. This goes straight to a boss.
 
-Current open tasks:
+Current open tasks (format: name | priority | status | board | assigned):
 ${lines.join('\n')}
 ${completedSection}
 
