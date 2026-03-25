@@ -182,6 +182,37 @@ async function pgInit() {
 
 let initialized = false
 
+async function seedIfEmpty() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const seedData = require('../config/seed.json') as {
+    team_members: { name: string; monday_user_id: string; is_video_team: boolean }[]
+    board_ids: { board_id: string; board_name: string }[]
+  }
+
+  if (isPostgres) {
+    const { sql } = await import('@vercel/postgres')
+    const { rows } = await sql`SELECT COUNT(*)::int AS count FROM team_members`
+    if (rows[0].count > 0) return
+    for (const m of seedData.team_members) {
+      await sql`INSERT INTO team_members (name, monday_user_id, is_video_team) VALUES (${m.name}, ${m.monday_user_id}, ${m.is_video_team}) ON CONFLICT DO NOTHING`
+    }
+    for (const b of seedData.board_ids) {
+      await sql`INSERT INTO board_ids (board_id, board_name) VALUES (${b.board_id}, ${b.board_name}) ON CONFLICT DO NOTHING`
+    }
+  } else {
+    const db = getSqlite()
+    const { count } = db.prepare('SELECT COUNT(*) AS count FROM team_members').get() as { count: number }
+    if (count > 0) return
+    for (const m of seedData.team_members) {
+      db.prepare('INSERT OR IGNORE INTO team_members (name, monday_user_id, is_video_team) VALUES (?, ?, ?)').run(m.name, m.monday_user_id, m.is_video_team ? 1 : 0)
+    }
+    for (const b of seedData.board_ids) {
+      db.prepare('INSERT OR IGNORE INTO board_ids (board_id, board_name) VALUES (?, ?)').run(b.board_id, b.board_name)
+    }
+  }
+  console.log('[db] Seeded team members and board IDs from config/seed.json')
+}
+
 export async function initDB() {
   if (initialized) return
   initialized = true
@@ -190,6 +221,7 @@ export async function initDB() {
   } else {
     sqliteInit()
   }
+  await seedIfEmpty()
 }
 
 export async function getTeamMembers() {

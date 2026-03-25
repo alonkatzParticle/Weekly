@@ -1,0 +1,14 @@
+{
+  "team_members": [
+    { "name": "Dan Lowenstein",  "monday_user_id": "69272319", "is_video_team": false },
+    { "name": "Isaac Yashar",    "monday_user_id": "51316881", "is_video_team": true  },
+    { "name": "Natalie Abesdid", "monday_user_id": "75466488", "is_video_team": false },
+    { "name": "Omri Tabachnik",  "monday_user_id": "96948732", "is_video_team": true  },
+    { "name": "Yael Ben-Dor",    "monday_user_id": "75466464", "is_video_team": true  },
+    { "name": "Matan Shapira",   "monday_user_id": "75937261", "is_video_team": true  }
+  ],
+  "board_ids": [
+    { "board_id": "8036329818", "board_name": "Design Projects - 2.0" },
+    { "board_id": "5433027071", "board_name": "Video Projects"        }
+  ]
+}
