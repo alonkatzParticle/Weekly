@@ -1,7 +1,6 @@
-import { getStatusReportData } from '@/lib/statusReport'
 import StatusReportClient from './StatusReportClient'
 
-export default async function StatusReportPage() {
-  const initialData = await getStatusReportData().catch(() => ({ tasksByBoard: {}, completedToday: [] }))
-  return <StatusReportClient initialData={initialData} />
+// Don't block on Monday.com data — client fetches via /api/status-report on load
+export default function StatusReportPage() {
+  return <StatusReportClient initialData={{ tasksByBoard: {}, completedToday: [] }} />
 }

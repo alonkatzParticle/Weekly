@@ -197,6 +197,13 @@ export default function StatusReportClient({ initialData }: { initialData: Initi
 
   useBackgroundSync(() => fetchTasks(false, true))
 
+  // Auto-fetch on mount if no initial data was provided
+  useEffect(() => {
+    if (Object.keys(initialData.tasksByBoard).length === 0) {
+      fetchTasks()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const sortedTasksByBoard = useMemo(() => {
     const result: TasksByBoard = {}
     for (const board of Object.keys(tasksByBoard)) {
