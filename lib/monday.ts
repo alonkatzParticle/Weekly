@@ -527,7 +527,7 @@ export async function incrementalSync(boardIds: string[], token: string): Promis
   // 2. For each board with changes, re-fetch only those items and merge into cache
   let totalUpdated = 0
 
-  await Promise.allSettled([...changedByBoard.entries()].map(async ([boardId, itemIds]) => {
+  await Promise.allSettled(Array.from(changedByBoard.entries()).map(async ([boardId, itemIds]) => {
     try {
       const cached = boardItemCache.get(boardId)
       if (!cached) return
@@ -539,7 +539,7 @@ export async function incrementalSync(boardIds: string[], token: string): Promis
 
       const data = await mondayQuery(`
         query {
-          items(ids: [${[...itemIds].join(', ')}]) {
+          items(ids: [${Array.from(itemIds).join(', ')}]) {
             id name url group { title }
             column_values(${colIdsArg}) { id type text value }
           }
