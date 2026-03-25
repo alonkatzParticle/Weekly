@@ -480,6 +480,10 @@ export async function fetchTeamTasks(
 
 export function loadBoardCacheFromDb() {
   const rows = loadAllBoardCachesSync()
+  warmBoardCacheFromRows(rows)
+}
+
+export function warmBoardCacheFromRows(rows: Array<{ boardId: string; name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number }>) {
   let count = 0
   for (const { boardId, name, items, statusColors, fetchedAt } of rows) {
     if (!boardItemCache.has(boardId)) {
@@ -487,7 +491,7 @@ export function loadBoardCacheFromDb() {
       count++
     }
   }
-  if (count > 0) console.log(`[startup] Loaded ${count} board(s) from SQLite cache`)
+  if (count > 0) console.log(`[startup] Loaded ${count} board(s) from DB cache`)
 }
 
 export async function incrementalSync(boardIds: string[], token: string): Promise<{ updatedItems: number }> {

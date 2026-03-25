@@ -73,7 +73,19 @@ function sqliteInit() {
 // ─── Board cache (SQLite only) ────────────────────────────────────────────────
 
 export function saveBoardCacheSync(boardId: string, data: { name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number }) {
-  if (isPostgres) return
+  if (isPostgres) {
+    // fire-and-forget async upsert for Postgres
+    import('@vercel/postgres').then(({ sql }) =>
+      sql`INSERT INTO board_cache (board_id, board_name, items, status_colors, fetched_at)
+          VALUES (${boardId}, ${data.name}, ${JSON.stringify(data.items)}, ${JSON.stringify(data.statusColors)}, ${data.fetchedAt})
+          ON CONFLICT (board_id) DO UPDATE SET
+            board_name = EXCLUDED.board_name,
+            items = EXCLUDED.items,
+            status_colors = EXCLUDED.status_colors,
+            fetched_at = EXCLUDED.fetched_at`
+    ).catch(e => console.error('[db] saveBoardCacheSync postgres error:', e))
+    return
+  }
   try {
     getSqlite().prepare(`
       INSERT INTO board_cache (board_id, board_name, items, status_colors, fetched_at)
@@ -90,7 +102,7 @@ export function saveBoardCacheSync(boardId: string, data: { name: string; items:
 }
 
 export function loadBoardCacheFromDbSync(boardId: string): { name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number } | null {
-  if (isPostgres) return null
+  if (isPostgres) return null  // Postgres loads are async — use loadAllBoardCachesAsync instead
   try {
     const row = getSqlite().prepare('SELECT * FROM board_cache WHERE board_id = ?').get(boardId) as any
     if (!row) return null
@@ -104,7 +116,7 @@ export function loadBoardCacheFromDbSync(boardId: string): { name: string; items
 }
 
 export function loadAllBoardCachesSync(): Array<{ boardId: string; name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number }> {
-  if (isPostgres) return []
+  if (isPostgres) return []  // Postgres loads are async — use loadAllBoardCachesAsync instead
   try {
     const rows = getSqlite().prepare('SELECT * FROM board_cache').all() as any[]
     return rows.map(r => ({
@@ -113,6 +125,21 @@ export function loadAllBoardCachesSync(): Array<{ boardId: string; name: string;
       items: JSON.parse(r.items),
       statusColors: JSON.parse(r.status_colors),
       fetchedAt: r.fetched_at,
+    }))
+  } catch { return [] }
+}
+
+export async function loadAllBoardCachesAsync(): Promise<Array<{ boardId: string; name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number }>> {
+  if (!isPostgres) return loadAllBoardCachesSync()
+  try {
+    const { sql } = await import('@vercel/postgres')
+    const { rows } = await sql`SELECT * FROM board_cache`
+    return rows.map(r => ({
+      boardId: r.board_id,
+      name: r.board_name,
+      items: JSON.parse(r.items),
+      statusColors: JSON.parse(r.status_colors),
+      fetchedAt: Number(r.fetched_at),
     }))
   } catch { return [] }
 }
@@ -126,7 +153,14 @@ export function getCacheMetaSync(key: string): string | null {
 }
 
 export function setCacheMetaSync(key: string, value: string) {
-  if (isPostgres) return
+  if (isPostgres) {
+    // fire-and-forget async upsert for Postgres
+    import('@vercel/postgres').then(({ sql }) =>
+      sql`INSERT INTO cache_meta (key, value) VALUES (${key}, ${value})
+          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`
+    ).catch(e => console.error('[db] setCacheMetaSync postgres error:', e))
+    return
+  }
   try {
     getSqlite().prepare(`
       INSERT INTO cache_meta (key, value) VALUES (?, ?)
@@ -172,6 +206,18 @@ async function pgInit() {
     board_id VARCHAR(255) NOT NULL UNIQUE,
     board_name VARCHAR(255),
     created_at TIMESTAMP DEFAULT NOW()
+  )`
+  await sql`CREATE TABLE IF NOT EXISTS board_cache (
+    board_id VARCHAR(255) PRIMARY KEY,
+    board_name VARCHAR(255) NOT NULL,
+    items TEXT NOT NULL,
+    status_colors TEXT NOT NULL DEFAULT '{}',
+    fetched_at BIGINT NOT NULL
+  )`
+  await sql`CREATE TABLE IF NOT EXISTS cache_meta (
+    key VARCHAR(255) PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT NOW()
   )`
   // Migration: add tasks_hash to existing tables if not present
   await sql`ALTER TABLE ai_summaries ADD COLUMN IF NOT EXISTS tasks_hash VARCHAR(64)`
