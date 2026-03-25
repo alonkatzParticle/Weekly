@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDropboxToken } from '@/lib/dropbox'
 
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const g = globalThis as any
+if (!g._weeklyFilesCache) g._weeklyFilesCache = new Map<string, { data: any; fetchedAt: number }>()
+const cache = g._weeklyFilesCache as Map<string, { data: any; fetchedAt: number }>
+
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December']
 const EPOCH = new Date('2025-11-09T00:00:00')
@@ -25,6 +30,12 @@ export async function GET(req: NextRequest) {
   const memberName = req.nextUrl.searchParams.get('memberName')
   if (!weekEnding || !memberName) return NextResponse.json({ error: 'Missing params' }, { status: 400 })
 
+  const cacheKey = `${weekEnding}:${memberName}`
+  const hit = cache.get(cacheKey)
+  if (hit && Date.now() - hit.fetchedAt < CACHE_TTL) {
+    return NextResponse.json(hit.data)
+  }
+
   const token = await getDropboxToken()
   const basePath = (process.env.DROPBOX_PATH ?? '/Weekly Reports').replace(/\/$/, '')
 
@@ -39,8 +50,10 @@ export async function GET(req: NextRequest) {
   })
 
   if (!res.ok) {
-    // Folder may not exist yet — return empty list
-    return NextResponse.json({ files: [], folder, folderPath })
+    // Folder may not exist yet — cache and return empty list
+    const empty = { files: [], folder, folderPath, sharedLink: null }
+    cache.set(cacheKey, { data: empty, fetchedAt: Date.now() })
+    return NextResponse.json(empty)
   }
 
   const data = await res.json()
@@ -80,5 +93,7 @@ export async function GET(req: NextRequest) {
     }
   } catch {}
 
-  return NextResponse.json({ files, folder, folderPath, sharedLink })
+  const result = { files, folder, folderPath, sharedLink }
+  cache.set(cacheKey, { data: result, fetchedAt: Date.now() })
+  return NextResponse.json(result)
 }

@@ -43,14 +43,18 @@ function SummaryScroll({ children, loading }: { children: React.ReactNode; loadi
   )
 }
 
-function statusTag(status: string): { label: string; className: string } | null {
-  const s = status.toLowerCase().trim()
-  if (!s) return null
-  if (s.includes('done') || s.includes('complete')) return { label: status, className: 'bg-green-100 text-green-700' }
-  if (s.includes('approved') && !s.includes('approval')) return { label: status, className: 'bg-purple-100 text-purple-700' }
-  if (s.includes('approval')) return { label: status, className: 'bg-yellow-100 text-yellow-700' }
-  if (s.includes('quality') || s.includes('review')) return { label: status, className: 'bg-blue-100 text-blue-700' }
-  return { label: status, className: 'bg-gray-100 text-gray-600' }
+function StatusBadge({ status, color }: { status: string; color: string | null }) {
+  if (!status) return null
+  return (
+    <span
+      className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
+      style={color
+        ? { backgroundColor: color + '22', color, border: `1px solid ${color}55` }
+        : { backgroundColor: '#e5e7eb', color: '#4b5563' }}
+    >
+      {status}
+    </span>
+  )
 }
 
 export function LastWeekSummary({
@@ -171,9 +175,7 @@ export function LastWeekSummary({
             <p className="text-sm text-muted-foreground">No tasks found for last week.</p>
           ) : (
             <div className="space-y-2">
-              {tasks.map(task => {
-                const tag = statusTag(task.status)
-                return (
+              {tasks.map(task => (
                 <div
                   key={task.id}
                   onClick={() => task.dropbox_link && setSelectedTask(task)}
@@ -183,10 +185,8 @@ export function LastWeekSummary({
                     <p className="text-sm font-medium truncate">{task.name}</p>
                     <p className="text-xs text-muted-foreground">{task.board_name}</p>
                   </div>
-                  {tag && (
-                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${tag.className}`}>
-                      {tag.label}
-                    </span>
+                  {task.status && (
+                    <StatusBadge status={task.status} color={task.status_color ?? null} />
                   )}
                   <div className="flex items-center gap-2 shrink-0">
                     {task.monday_url && (
@@ -208,7 +208,7 @@ export function LastWeekSummary({
                     )}
                   </div>
                 </div>
-              )})}
+              ))}
             </div>
           )}
         </CardContent>

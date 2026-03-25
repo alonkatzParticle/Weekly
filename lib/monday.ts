@@ -1,3 +1,5 @@
+import { saveBoardCacheSync, loadAllBoardCachesSync, loadBoardCacheFromDbSync, getCacheMetaSync, setCacheMetaSync } from './db'
+
 export interface DailyTask {
   id: string
   name: string
@@ -159,8 +161,20 @@ export function clearBoardCache() {
 
 async function fetchBoardItems(boardId: string, token: string, force = false): Promise<BoardCache> {
   if (!force) {
+    // 1. Check in-memory cache
     const cached = boardItemCache.get(boardId)
     if (cached && Date.now() - cached.fetchedAt < BOARD_ITEM_TTL) return cached
+
+    // 2. Fall back to SQLite before hitting Monday (survives restarts, instant)
+    if (!cached) {
+      const dbEntry = loadBoardCacheFromDbSync(boardId)
+      if (dbEntry) {
+        // Reset fetchedAt to now so the in-memory TTL starts fresh from this load
+        const entry = { ...dbEntry, fetchedAt: Date.now() }
+        boardItemCache.set(boardId, entry)
+        return entry
+      }
+    }
   }
 
   // Deduplicate concurrent in-flight requests for the same board (skip when force=true)
@@ -212,6 +226,11 @@ async function fetchBoardItems(boardId: string, token: string, force = false): P
 
       const result: BoardCache = { name: meta.name, items, statusColors: meta.statusColors, fetchedAt: Date.now() }
       boardItemCache.set(boardId, result)
+      // Persist to SQLite + update last_synced (non-blocking)
+      setImmediate(() => {
+        saveBoardCacheSync(boardId, result)
+        setCacheMetaSync('last_synced', new Date().toISOString())
+      })
       return result
     } finally {
       inflightFetches.delete(boardId)
@@ -457,6 +476,94 @@ export async function fetchTeamTasks(
   })
 
   return tasksByUser
+}
+
+export function loadBoardCacheFromDb() {
+  const rows = loadAllBoardCachesSync()
+  let count = 0
+  for (const { boardId, name, items, statusColors, fetchedAt } of rows) {
+    if (!boardItemCache.has(boardId)) {
+      boardItemCache.set(boardId, { name, items, statusColors, fetchedAt })
+      count++
+    }
+  }
+  if (count > 0) console.log(`[startup] Loaded ${count} board(s) from SQLite cache`)
+}
+
+export async function incrementalSync(boardIds: string[], token: string): Promise<{ updatedItems: number }> {
+  const lastSynced = getCacheMetaSync('last_synced') ?? new Date(Date.now() - 60_000).toISOString()
+  const now = new Date().toISOString()
+
+  // 1. Fetch activity logs since lastSynced to find changed item IDs per board
+  const changedByBoard = new Map<string, Set<string>>()
+
+  await Promise.allSettled(boardIds.map(async (boardId) => {
+    try {
+      const data = await mondayQuery(`
+        query {
+          boards(ids: [${boardId}]) {
+            activity_logs(limit: 500, from: "${lastSynced}", to: "${now}") {
+              id event data
+            }
+          }
+        }
+      `, token)
+
+      const logs: any[] = data?.boards?.[0]?.activity_logs ?? []
+      const ids = new Set<string>()
+      for (const log of logs) {
+        try {
+          const logData = JSON.parse(log.data ?? '{}')
+          const pulseId = String(logData.pulse_id)
+          if (pulseId && pulseId !== 'undefined') ids.add(pulseId)
+        } catch {}
+      }
+      if (ids.size > 0) changedByBoard.set(boardId, ids)
+    } catch (err) {
+      console.error(`[sync] Activity log error for board ${boardId}:`, err)
+    }
+  }))
+
+  // 2. For each board with changes, re-fetch only those items and merge into cache
+  let totalUpdated = 0
+
+  await Promise.allSettled([...changedByBoard.entries()].map(async ([boardId, itemIds]) => {
+    try {
+      const cached = boardItemCache.get(boardId)
+      if (!cached) return
+
+      const meta = await fetchBoardMeta(boardId, token)
+      const colIdsArg = meta.neededColumnIds.length > 0
+        ? `ids: [${meta.neededColumnIds.map(id => `"${id}"`).join(', ')}]`
+        : ''
+
+      const data = await mondayQuery(`
+        query {
+          items(ids: [${[...itemIds].join(', ')}]) {
+            id name url group { title }
+            column_values(${colIdsArg}) { id type text value }
+          }
+        }
+      `, token)
+
+      const freshItems: any[] = data?.items ?? []
+      if (freshItems.length === 0) return
+
+      // Merge fresh items into cached items
+      const itemMap = new Map(cached.items.map((item: any) => [String(item.id), item]))
+      for (const item of freshItems) itemMap.set(String(item.id), item)
+
+      const updated: BoardCache = { ...cached, items: Array.from(itemMap.values()), fetchedAt: Date.now() }
+      boardItemCache.set(boardId, updated)
+      setImmediate(() => { saveBoardCacheSync(boardId, updated) })
+      totalUpdated += freshItems.length
+    } catch (err) {
+      console.error(`[sync] Item update error for board ${boardId}:`, err)
+    }
+  }))
+
+  setCacheMetaSync('last_synced', now)
+  return { updatedItems: totalUpdated }
 }
 
 export async function fetchDailyActivity(

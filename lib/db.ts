@@ -52,10 +52,89 @@ function sqliteInit() {
       board_name TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS board_cache (
+      board_id TEXT PRIMARY KEY,
+      board_name TEXT NOT NULL,
+      items TEXT NOT NULL,
+      status_colors TEXT NOT NULL DEFAULT '{}',
+      fetched_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS cache_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `)
   // Migration: add tasks_hash to existing tables if not present
   try { db.exec(`ALTER TABLE ai_summaries ADD COLUMN tasks_hash TEXT`) } catch {}
   try { db.exec(`ALTER TABLE team_ai_summaries ADD COLUMN tasks_hash TEXT`) } catch {}
+}
+
+// ─── Board cache (SQLite only) ────────────────────────────────────────────────
+
+export function saveBoardCacheSync(boardId: string, data: { name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number }) {
+  if (isPostgres) return
+  try {
+    getSqlite().prepare(`
+      INSERT INTO board_cache (board_id, board_name, items, status_colors, fetched_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(board_id) DO UPDATE SET
+        board_name = excluded.board_name,
+        items = excluded.items,
+        status_colors = excluded.status_colors,
+        fetched_at = excluded.fetched_at
+    `).run(boardId, data.name, JSON.stringify(data.items), JSON.stringify(data.statusColors), data.fetchedAt)
+  } catch (e) {
+    console.error('[db] saveBoardCacheSync error:', e)
+  }
+}
+
+export function loadBoardCacheFromDbSync(boardId: string): { name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number } | null {
+  if (isPostgres) return null
+  try {
+    const row = getSqlite().prepare('SELECT * FROM board_cache WHERE board_id = ?').get(boardId) as any
+    if (!row) return null
+    return {
+      name: row.board_name,
+      items: JSON.parse(row.items),
+      statusColors: JSON.parse(row.status_colors),
+      fetchedAt: row.fetched_at,
+    }
+  } catch { return null }
+}
+
+export function loadAllBoardCachesSync(): Array<{ boardId: string; name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number }> {
+  if (isPostgres) return []
+  try {
+    const rows = getSqlite().prepare('SELECT * FROM board_cache').all() as any[]
+    return rows.map(r => ({
+      boardId: r.board_id,
+      name: r.board_name,
+      items: JSON.parse(r.items),
+      statusColors: JSON.parse(r.status_colors),
+      fetchedAt: r.fetched_at,
+    }))
+  } catch { return [] }
+}
+
+export function getCacheMetaSync(key: string): string | null {
+  if (isPostgres) return null
+  try {
+    const row = getSqlite().prepare('SELECT value FROM cache_meta WHERE key = ?').get(key) as any
+    return row?.value ?? null
+  } catch { return null }
+}
+
+export function setCacheMetaSync(key: string, value: string) {
+  if (isPostgres) return
+  try {
+    getSqlite().prepare(`
+      INSERT INTO cache_meta (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+    `).run(key, value)
+  } catch (e) {
+    console.error('[db] setCacheMetaSync error:', e)
+  }
 }
 
 // ─── Postgres (Vercel production) ─────────────────────────────────────────────

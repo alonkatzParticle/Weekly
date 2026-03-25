@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateSummaryStream, buildTeamSummaryPrompt } from '@/lib/anthropic'
+import { generateSummary, buildTeamSummaryPrompt } from '@/lib/anthropic'
 import { getTeamAISummary, saveTeamAISummary, initDB } from '@/lib/db'
 import { hashTasks } from '@/lib/tasks-hash'
 
@@ -34,23 +34,9 @@ export async function POST(req: NextRequest) {
 
     const prompt = buildTeamSummaryPrompt(tasks)
 
-    const stream = await generateSummaryStream(prompt, apiKey)
-    const [streamForResponse, streamForCache] = stream.tee()
-
-    ;(async () => {
-      const reader = streamForCache.getReader()
-      const chunks: string[] = []
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        chunks.push(new TextDecoder().decode(value))
-      }
-      await saveTeamAISummary(weekEnding, 'team_last_week', chunks.join(''), tasksHash ?? undefined).catch(console.error)
-    })()
-
-    return new Response(streamForResponse, {
-      headers: { 'Content-Type': 'text/plain', 'Transfer-Encoding': 'chunked' },
-    })
+    const content = await generateSummary(prompt, apiKey)
+    await saveTeamAISummary(weekEnding, 'team_last_week', content, tasksHash ?? undefined).catch(console.error)
+    return new Response(content, { headers: { 'Content-Type': 'text/plain' } })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateSummaryStream, buildStudioPrompt } from '@/lib/anthropic'
+import { generateSummary, buildStudioPrompt } from '@/lib/anthropic'
 import { getAISummary, saveAISummary, initDB } from '@/lib/db'
 import { hashTasks } from '@/lib/tasks-hash'
 
@@ -37,23 +37,9 @@ export async function POST(req: NextRequest) {
     }
 
     const prompt = buildStudioPrompt(memberName, tasks, type)
-    const stream = await generateSummaryStream(prompt, apiKey)
-    const [streamForResponse, streamForCache] = stream.tee()
-
-    ;(async () => {
-      const reader = streamForCache.getReader()
-      const chunks: string[] = []
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        chunks.push(new TextDecoder().decode(value))
-      }
-      await saveAISummary(memberId, weekEnding, type, chunks.join(''), tasksHash ?? undefined).catch(console.error)
-    })()
-
-    return new Response(streamForResponse, {
-      headers: { 'Content-Type': 'text/plain', 'Transfer-Encoding': 'chunked' },
-    })
+    const content = await generateSummary(prompt, apiKey)
+    await saveAISummary(memberId, weekEnding, type, content, tasksHash ?? undefined).catch(console.error)
+    return new Response(content, { headers: { 'Content-Type': 'text/plain' } })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

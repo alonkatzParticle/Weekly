@@ -22,6 +22,7 @@ interface TeamMemberTabsProps {
   nextWeekStart: string
   nextWeekEnd: string
   initialMemberId?: number
+  initialTasksByUser?: Record<string, { lastWeek: MondayTask[]; thisWeek: MondayTask[] }>
 }
 
 export function TeamMemberTabs({
@@ -31,6 +32,7 @@ export function TeamMemberTabs({
   nextWeekStart,
   nextWeekEnd,
   initialMemberId,
+  initialTasksByUser,
 }: TeamMemberTabsProps) {
   const [activeTab, setActiveTab] = useState(() => {
     if (initialMemberId && members.some(m => m.id === initialMemberId)) return initialMemberId
@@ -38,7 +40,17 @@ export function TeamMemberTabs({
   })
   const [tasksByMember, setTasksByMember] = useState<
     Record<string, { lastWeek: MondayTask[]; thisWeek: MondayTask[]; loaded: boolean; error: string }>
-  >({})
+  >(() => {
+    if (!initialTasksByUser) return {}
+    const initial: Record<string, { lastWeek: MondayTask[]; thisWeek: MondayTask[]; loaded: boolean; error: string }> = {}
+    for (const m of members) {
+      const data = initialTasksByUser[m.monday_user_id]
+      if (data) {
+        initial[`${m.monday_user_id}-${weekStart}`] = { ...data, loaded: true, error: '' }
+      }
+    }
+    return initial
+  })
 
   const activeMember = members.find(m => m.id === activeTab) ?? members[0]
 

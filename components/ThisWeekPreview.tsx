@@ -168,6 +168,16 @@ export function ThisWeekPreview({
                     <p className="text-sm font-medium truncate">{task.name}</p>
                     <p className="text-xs text-muted-foreground">{task.board_name}</p>
                   </div>
+                  {task.status && (
+                    <span
+                      className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
+                      style={task.status_color
+                        ? { backgroundColor: task.status_color + '22', color: task.status_color, border: `1px solid ${task.status_color}55` }
+                        : { backgroundColor: '#e5e7eb', color: '#4b5563' }}
+                    >
+                      {task.status}
+                    </span>
+                  )}
                   <div className="flex items-center gap-2 shrink-0">
                     {task.monday_url && (
                       <a href={task.monday_url} target="_blank" rel="noopener noreferrer" title="Open in Monday.com" className="text-muted-foreground hover:text-foreground transition-colors">
