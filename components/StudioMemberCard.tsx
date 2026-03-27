@@ -8,7 +8,6 @@ interface Member {
   id: number
   name: string
   monday_user_id: string
-  is_video_team: boolean
 }
 
 interface Props {
@@ -117,11 +116,6 @@ export function StudioMemberCard({ member, lastWeekTasks, thisWeekTasks, tasksLo
             {initials}
           </div>
           <span className="truncate">{member.name}</span>
-          {member.is_video_team && (
-            <span className="ml-auto text-[10px] font-medium bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full shrink-0">
-              Video
-            </span>
-          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 flex-1">

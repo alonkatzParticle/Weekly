@@ -10,7 +10,6 @@ interface TeamMember {
   id: number
   name: string
   monday_user_id: string
-  is_video_team: boolean
 }
 
 interface TeamMemberTabsProps {
@@ -140,11 +139,6 @@ export function TeamMemberTabs({
               )}
             >
               {member.name}
-              {member.is_video_team && (
-                <span className="ml-1.5 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
-                  Video
-                </span>
-              )}
             </button>
           ))}
         </div>

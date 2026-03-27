@@ -8,7 +8,6 @@ interface TeamMember {
   id?: number
   name: string
   monday_user_id: string
-  is_video_team: boolean
 }
 
 interface Board {
@@ -56,7 +55,6 @@ export default function SettingsPage() {
 
   // New member form
   const [selectedUserId, setSelectedUserId] = useState('')
-  const [newMemberIsVideo, setNewMemberIsVideo] = useState(false)
 
   // New board selection
   const [selectedBoardId, setSelectedBoardId] = useState('')
@@ -113,14 +111,12 @@ export default function SettingsPage() {
       body: JSON.stringify({
         name: user.name,
         monday_user_id: user.id,
-        is_video_team: newMemberIsVideo,
       }),
     })
     const res = await fetch('/api/settings')
     const d = await res.json()
     setMembers(d.members ?? [])
     setSelectedUserId('')
-    setNewMemberIsVideo(false)
   }
 
   const removeMember = async (id: number) => {
@@ -261,7 +257,6 @@ export default function SettingsPage() {
                 <p className="text-sm font-medium">{m.name}</p>
                 <p className="text-xs text-muted-foreground">
                   ID: {m.monday_user_id}
-                  {m.is_video_team && ' · Video Team'}
                 </p>
               </div>
               <Button
@@ -313,16 +308,6 @@ export default function SettingsPage() {
                     </option>
                   ))}
                 </select>
-
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={newMemberIsVideo}
-                    onChange={e => setNewMemberIsVideo(e.target.checked)}
-                    className="rounded"
-                  />
-                  Video Team Member (shows time tracking)
-                </label>
 
                 <Button
                   size="sm"
