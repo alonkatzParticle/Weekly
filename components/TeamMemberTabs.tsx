@@ -154,7 +154,7 @@ export function TeamMemberTabs({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Column */}
           <div className="space-y-6">
-            <LastWeekSummary
+            {/* <LastWeekSummary
               memberId={activeMember.id}
               memberName={activeMember.name}
               weekEnd={weekEnd}
@@ -162,7 +162,7 @@ export function TeamMemberTabs({
               tasksLoaded={tasksLoaded}
               tasksError={tasksError}
               onRefreshTasks={() => fetchAllTasks(true)}
-            />
+            /> */}
             {activeMember.is_video_team && (
               <TimeTracking
                 mondayUserId={activeMember.monday_user_id}
@@ -174,7 +174,7 @@ export function TeamMemberTabs({
 
           {/* Right Column */}
           <div className="space-y-6">
-            <ThisWeekPreview
+            {/* <ThisWeekPreview
               memberId={activeMember.id}
               memberName={activeMember.name}
               weekEnd={nextWeekEnd}
@@ -182,7 +182,7 @@ export function TeamMemberTabs({
               tasksLoaded={tasksLoaded}
               tasksError={tasksError}
               onRefreshTasks={() => fetchAllTasks(true)}
-            />
+            /> */}
             <WorkSampleUpload memberName={activeMember.name} weekEnding={weekEnd} />
           </div>
         </div>
