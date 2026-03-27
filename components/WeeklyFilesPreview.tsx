@@ -45,11 +45,11 @@ export function WeeklyFilesPreview({ memberName, weekEnding }: Props) {
     return () => { el.removeEventListener('scroll', checkScroll); ro.disconnect() }
   }, [checkScroll, files])
 
-  const fetchFiles = useCallback(async () => {
+  const fetchFiles = useCallback(async (force = false) => {
     setLoading(true)
     try {
       const res = await fetch(
-        `/api/dropbox/weekly-files?weekEnding=${encodeURIComponent(weekEnding)}&memberName=${encodeURIComponent(memberName)}&t=${Date.now()}`,
+        `/api/dropbox/weekly-files?weekEnding=${encodeURIComponent(weekEnding)}&memberName=${encodeURIComponent(memberName)}&force=${force}&t=${Date.now()}`,
         { cache: 'no-store' }
       )
       const data = await res.json()
@@ -81,6 +81,7 @@ export function WeeklyFilesPreview({ memberName, weekEnding }: Props) {
         body: JSON.stringify({ path: file.path_lower }),
       })
       setFiles(prev => prev.filter(f => f.path_lower !== file.path_lower))
+      fetchFiles(true) // update server cache
     } finally {
       setDeleting(prev => { const s = new Set(prev); s.delete(file.path_lower); return s })
     }
@@ -131,7 +132,7 @@ export function WeeklyFilesPreview({ memberName, weekEnding }: Props) {
                 </a>
               )}
               <button
-                onClick={fetchFiles}
+                onClick={() => fetchFiles(true)}
                 disabled={loading}
                 className="text-muted-foreground hover:text-foreground transition-colors"
                 title="Refresh"
@@ -208,13 +209,13 @@ export function WeeklyFilesPreview({ memberName, weekEnding }: Props) {
           onClick={e => {
             if (e.target === e.currentTarget) {
               setShowUploadModal(false)
-              fetchFiles() // refresh in case they uploaded
+              fetchFiles(true) // refresh in case they uploaded
             }
           }}
         >
           <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl bg-card">
             <button
-              onClick={() => { setShowUploadModal(false); fetchFiles(); }}
+              onClick={() => { setShowUploadModal(false); fetchFiles(true); }}
               className="absolute top-4 right-4 z-10 p-1.5 text-muted-foreground hover:text-foreground bg-background/80 hover:bg-background rounded-full border shadow-sm transition-colors"
             >
               <X className="h-4 w-4" />

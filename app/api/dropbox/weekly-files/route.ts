@@ -28,11 +28,12 @@ export const dynamic = 'force-dynamic'
 export async function GET(req: NextRequest) {
   const weekEnding = req.nextUrl.searchParams.get('weekEnding')
   const memberName = req.nextUrl.searchParams.get('memberName')
+  const force = req.nextUrl.searchParams.get('force') === 'true'
   if (!weekEnding || !memberName) return NextResponse.json({ error: 'Missing params' }, { status: 400 })
 
   const cacheKey = `${weekEnding}:${memberName}`
   const hit = cache.get(cacheKey)
-  if (hit && Date.now() - hit.fetchedAt < CACHE_TTL) {
+  if (!force && hit && Date.now() - hit.fetchedAt < CACHE_TTL) {
     return NextResponse.json(hit.data)
   }
 
