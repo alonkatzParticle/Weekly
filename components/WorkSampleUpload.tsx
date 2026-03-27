@@ -1,5 +1,4 @@
-'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Upload, CheckCircle, XCircle, Loader2, Link } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -35,6 +34,7 @@ export function WorkSampleUpload({ memberName, weekEnding }: WorkSampleUploadPro
   const [urlInput, setUrlInput] = useState('')
   const [urlTitle, setUrlTitle] = useState('')
   const [urlSaving, setUrlSaving] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const folder = weekFolder(weekEnding)
 
@@ -123,12 +123,14 @@ export function WorkSampleUpload({ memberName, weekEnding }: WorkSampleUploadPro
         >
           <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
           <p className="text-sm text-muted-foreground mb-2">Drop files here or</p>
-          <label>
-            <Button variant="outline" size="sm" asChild>
-              <span>Browse Files</span>
+          <div>
+            <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+              Browse Files
             </Button>
-            <input type="file" multiple className="hidden" onChange={e => handleFiles(e.target.files)} />
-          </label>
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={e => {
+              if (e.target.files) handleFiles(e.target.files)
+            }} />
+          </div>
           <p className="text-xs text-muted-foreground mt-2">→ {folder}/{memberName}/</p>
         </div>
 
