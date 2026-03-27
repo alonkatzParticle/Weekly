@@ -3,7 +3,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { LastWeekSummary } from './LastWeekSummary'
 import { ThisWeekPreview } from './ThisWeekPreview'
-import { WorkSampleUpload } from './WorkSampleUpload'
 import { WeeklyFilesPreview } from './WeeklyFilesPreview'
 import type { MondayTask } from '@/lib/monday'
 
@@ -198,7 +197,6 @@ export function TeamMemberTabs({
               tasksError={tasksError}
               onRefreshTasks={() => fetchAllTasks(true)}
             />
-            <WorkSampleUpload memberName={activeMember.name} weekEnding={weekEnd} />
           </div>
         </div>
         </div>

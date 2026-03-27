@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { RefreshCw, Play, ChevronLeft, ChevronRight, X, ExternalLink, Pencil, Check, ChevronRight as ArrowRight } from 'lucide-react'
+import { RefreshCw, Play, ChevronLeft, ChevronRight, X, ExternalLink, Pencil, Check, ChevronRight as ArrowRight, Plus } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { WorkSampleUpload } from './WorkSampleUpload'
 
 interface WeeklyFile {
   name: string
@@ -25,6 +26,7 @@ export function WeeklyFilesPreview({ memberName, weekEnding }: Props) {
   const [editMode, setEditMode] = useState(false)
   const [deleting, setDeleting] = useState<Set<string>>(new Set())
   const [canScrollRight, setCanScrollRight] = useState(false)
+  const [showUploadModal, setShowUploadModal] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const checkScroll = useCallback(() => {
@@ -102,6 +104,13 @@ export function WeeklyFilesPreview({ memberName, weekEnding }: Props) {
               )}
             </div>
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowUploadModal(true)}
+                className="flex items-center gap-1 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 px-2 py-1 rounded transition-colors"
+                title="Upload New Work Sample"
+              >
+                <Plus className="h-3.5 w-3.5" /> Upload
+              </button>
               {files.length > 0 && (
                 <button
                   onClick={() => setEditMode(e => !e)}
@@ -191,6 +200,29 @@ export function WeeklyFilesPreview({ memberName, weekEnding }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={e => {
+            if (e.target === e.currentTarget) {
+              setShowUploadModal(false)
+              fetchFiles() // refresh in case they uploaded
+            }
+          }}
+        >
+          <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl bg-card">
+            <button
+              onClick={() => { setShowUploadModal(false); fetchFiles(); }}
+              className="absolute top-4 right-4 z-10 p-1.5 text-muted-foreground hover:text-foreground bg-background/80 hover:bg-background rounded-full border shadow-sm transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <WorkSampleUpload memberName={memberName} weekEnding={weekEnding} />
+          </div>
+        </div>
+      )}
 
       {/* Lightbox */}
       {lightbox && (
