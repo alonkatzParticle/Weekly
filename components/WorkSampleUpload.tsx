@@ -1,3 +1,4 @@
+'use client'
 import { useState, useCallback, useRef } from 'react'
 import { Upload, CheckCircle, XCircle, Loader2, Link } from 'lucide-react'
 import { Button } from '@/components/ui/button'
