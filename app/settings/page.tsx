@@ -40,6 +40,11 @@ export default function SettingsPage() {
   const [members, setMembers] = useState<TeamMember[]>([])
   const [boards, setBoards] = useState<Board[]>([])
   const [loading, setLoading] = useState(true)
+  const [showAI, setShowAI] = useState(false)
+
+  useEffect(() => {
+    setShowAI(localStorage.getItem('show_ai_summaries') === 'true')
+  }, [])
 
   // Org data from Monday.com
   const [orgUsers, setOrgUsers] = useState<OrgUser[]>([])
@@ -169,6 +174,33 @@ export default function SettingsPage() {
           Configure API keys, team members, and boards
         </p>
       </div>
+
+      {/* App Preferences */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Preferences</CardTitle>
+          <CardDescription>
+            Customize your application experience
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <label className="flex items-center space-x-3 cursor-pointer p-4 border rounded-md hover:bg-muted/50 transition-colors">
+            <input 
+              type="checkbox" 
+              className="rounded border-gray-300 text-primary focus:ring-primary h-4 w-4"
+              checked={showAI}
+              onChange={(e) => {
+                setShowAI(e.target.checked)
+                localStorage.setItem('show_ai_summaries', String(e.target.checked))
+              }}
+            />
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">Show AI Summaries</span>
+              <span className="text-xs text-muted-foreground">Enable automatic generation of Claude AI summaries for each week. Disable this to save AI credits.</span>
+            </div>
+          </label>
+        </CardContent>
+      </Card>
 
       {/* Environment Variables */}
       <Card>

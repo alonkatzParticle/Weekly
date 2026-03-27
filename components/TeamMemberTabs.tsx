@@ -148,19 +148,6 @@ export function TeamMemberTabs({
             </button>
           ))}
         </div>
-        
-        <label className="flex items-center space-x-2 text-xs font-medium text-muted-foreground mr-2 mb-2 cursor-pointer group whitespace-nowrap bg-muted/50 px-2.5 py-1.5 rounded shadow-sm border">
-          <input 
-            type="checkbox" 
-            className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5"
-            checked={showAI}
-            onChange={(e) => {
-              setShowAI(e.target.checked)
-              localStorage.setItem('show_ai_summaries', String(e.target.checked))
-            }}
-          />
-          <span className="group-hover:text-foreground transition-colors">Show AI Summaries</span>
-        </label>
       </div>
 
       {/* Tab Content */}
