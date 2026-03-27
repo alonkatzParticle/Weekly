@@ -5,11 +5,10 @@ export async function register() {
 
   // Warm in-memory cache from DB on every server start (SQLite or Postgres)
   try {
-    const { initDB, loadAllBoardCachesAsync } = await import('./lib/db')
-    const { warmBoardCacheFromRows } = await import('./lib/monday')
+    const { initDB } = await import('./lib/db')
+    const { loadBoardCacheFromDb } = await import('./lib/monday')
     await initDB()
-    const rows = await loadAllBoardCachesAsync()
-    warmBoardCacheFromRows(rows)
+    await loadBoardCacheFromDb()
   } catch (e) {
     console.error('[startup] Failed to load board cache from DB:', e)
   }

@@ -70,104 +70,96 @@ function sqliteInit() {
   try { db.exec(`ALTER TABLE team_ai_summaries ADD COLUMN tasks_hash TEXT`) } catch {}
 }
 
-// ─── Board cache (SQLite only) ────────────────────────────────────────────────
+// ─── Board cache ──────────────────────────────────────────────────────────────
 
-export function saveBoardCacheSync(boardId: string, data: { name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number }) {
-  if (isPostgres) {
-    // fire-and-forget async upsert for Postgres
-    import('@vercel/postgres').then(({ sql }) =>
-      sql`INSERT INTO board_cache (board_id, board_name, items, status_colors, fetched_at)
-          VALUES (${boardId}, ${data.name}, ${JSON.stringify(data.items)}, ${JSON.stringify(data.statusColors)}, ${data.fetchedAt})
-          ON CONFLICT (board_id) DO UPDATE SET
-            board_name = EXCLUDED.board_name,
-            items = EXCLUDED.items,
-            status_colors = EXCLUDED.status_colors,
-            fetched_at = EXCLUDED.fetched_at`
-    ).catch(e => console.error('[db] saveBoardCacheSync postgres error:', e))
-    return
-  }
+type BoardCacheEntry = { name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number }
+
+export async function saveBoardCache(boardId: string, data: { name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number }) {
   try {
-    getSqlite().prepare(`
-      INSERT INTO board_cache (board_id, board_name, items, status_colors, fetched_at)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(board_id) DO UPDATE SET
-        board_name = excluded.board_name,
-        items = excluded.items,
-        status_colors = excluded.status_colors,
-        fetched_at = excluded.fetched_at
-    `).run(boardId, data.name, JSON.stringify(data.items), JSON.stringify(data.statusColors), data.fetchedAt)
+    if (isPostgres) {
+      const { sql } = await import('@vercel/postgres')
+      const items = JSON.stringify(data.items)
+      const statusColors = JSON.stringify(data.statusColors)
+      await sql`
+        INSERT INTO board_cache (board_id, board_name, items, status_colors, fetched_at)
+        VALUES (${boardId}, ${data.name}, ${items}, ${statusColors}, ${data.fetchedAt})
+        ON CONFLICT (board_id) DO UPDATE SET
+          board_name = EXCLUDED.board_name,
+          items = EXCLUDED.items,
+          status_colors = EXCLUDED.status_colors,
+          fetched_at = EXCLUDED.fetched_at
+      `
+    } else {
+      getSqlite().prepare(`
+        INSERT INTO board_cache (board_id, board_name, items, status_colors, fetched_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(board_id) DO UPDATE SET
+          board_name = excluded.board_name,
+          items = excluded.items,
+          status_colors = excluded.status_colors,
+          fetched_at = excluded.fetched_at
+      `).run(boardId, data.name, JSON.stringify(data.items), JSON.stringify(data.statusColors), data.fetchedAt)
+    }
   } catch (e) {
-    console.error('[db] saveBoardCacheSync error:', e)
+    console.error('[db] saveBoardCache error:', e)
   }
 }
 
-export function loadBoardCacheFromDbSync(boardId: string): { name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number } | null {
-  if (isPostgres) return null  // Postgres loads are async — use loadAllBoardCachesAsync instead
+export async function loadBoardCacheEntry(boardId: string): Promise<BoardCacheEntry | null> {
   try {
+    if (isPostgres) {
+      const { sql } = await import('@vercel/postgres')
+      const result = await sql`SELECT * FROM board_cache WHERE board_id = ${boardId}`
+      const row = result.rows[0]
+      if (!row) return null
+      return { name: row.board_name, items: JSON.parse(row.items), statusColors: JSON.parse(row.status_colors), fetchedAt: Number(row.fetched_at) }
+    }
     const row = getSqlite().prepare('SELECT * FROM board_cache WHERE board_id = ?').get(boardId) as any
     if (!row) return null
-    return {
-      name: row.board_name,
-      items: JSON.parse(row.items),
-      statusColors: JSON.parse(row.status_colors),
-      fetchedAt: row.fetched_at,
-    }
+    return { name: row.board_name, items: JSON.parse(row.items), statusColors: JSON.parse(row.status_colors), fetchedAt: row.fetched_at }
   } catch { return null }
 }
 
-export function loadAllBoardCachesSync(): Array<{ boardId: string; name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number }> {
-  if (isPostgres) return []  // Postgres loads are async — use loadAllBoardCachesAsync instead
+export async function loadAllBoardCacheEntries(): Promise<Array<{ boardId: string } & BoardCacheEntry>> {
   try {
+    if (isPostgres) {
+      const { sql } = await import('@vercel/postgres')
+      const result = await sql`SELECT * FROM board_cache`
+      return result.rows.map(r => ({ boardId: r.board_id, name: r.board_name, items: JSON.parse(r.items), statusColors: JSON.parse(r.status_colors), fetchedAt: Number(r.fetched_at) }))
+    }
     const rows = getSqlite().prepare('SELECT * FROM board_cache').all() as any[]
-    return rows.map(r => ({
-      boardId: r.board_id,
-      name: r.board_name,
-      items: JSON.parse(r.items),
-      statusColors: JSON.parse(r.status_colors),
-      fetchedAt: r.fetched_at,
-    }))
+    return rows.map(r => ({ boardId: r.board_id, name: r.board_name, items: JSON.parse(r.items), statusColors: JSON.parse(r.status_colors), fetchedAt: r.fetched_at }))
   } catch { return [] }
 }
 
-export async function loadAllBoardCachesAsync(): Promise<Array<{ boardId: string; name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number }>> {
-  if (!isPostgres) return loadAllBoardCachesSync()
+export async function getCacheMeta(key: string): Promise<string | null> {
   try {
-    const { sql } = await import('@vercel/postgres')
-    const { rows } = await sql`SELECT * FROM board_cache`
-    return rows.map(r => ({
-      boardId: r.board_id,
-      name: r.board_name,
-      items: JSON.parse(r.items),
-      statusColors: JSON.parse(r.status_colors),
-      fetchedAt: Number(r.fetched_at),
-    }))
-  } catch { return [] }
-}
-
-export function getCacheMetaSync(key: string): string | null {
-  if (isPostgres) return null
-  try {
+    if (isPostgres) {
+      const { sql } = await import('@vercel/postgres')
+      const result = await sql`SELECT value FROM cache_meta WHERE key = ${key}`
+      return result.rows[0]?.value ?? null
+    }
     const row = getSqlite().prepare('SELECT value FROM cache_meta WHERE key = ?').get(key) as any
     return row?.value ?? null
   } catch { return null }
 }
 
-export function setCacheMetaSync(key: string, value: string) {
-  if (isPostgres) {
-    // fire-and-forget async upsert for Postgres
-    import('@vercel/postgres').then(({ sql }) =>
-      sql`INSERT INTO cache_meta (key, value) VALUES (${key}, ${value})
-          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`
-    ).catch(e => console.error('[db] setCacheMetaSync postgres error:', e))
-    return
-  }
+export async function setCacheMeta(key: string, value: string): Promise<void> {
   try {
-    getSqlite().prepare(`
-      INSERT INTO cache_meta (key, value) VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
-    `).run(key, value)
+    if (isPostgres) {
+      const { sql } = await import('@vercel/postgres')
+      await sql`
+        INSERT INTO cache_meta (key, value) VALUES (${key}, ${value})
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+      `
+    } else {
+      getSqlite().prepare(`
+        INSERT INTO cache_meta (key, value) VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+      `).run(key, value)
+    }
   } catch (e) {
-    console.error('[db] setCacheMetaSync error:', e)
+    console.error('[db] setCacheMeta error:', e)
   }
 }
 

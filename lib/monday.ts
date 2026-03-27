@@ -1,4 +1,4 @@
-import { saveBoardCacheSync, loadAllBoardCachesSync, loadBoardCacheFromDbSync, getCacheMetaSync, setCacheMetaSync } from './db'
+import { saveBoardCache, loadAllBoardCacheEntries, loadBoardCacheEntry, getCacheMeta, setCacheMeta } from './db'
 
 export interface DailyTask {
   id: string
@@ -165,15 +165,13 @@ async function fetchBoardItems(boardId: string, token: string, force = false): P
     const cached = boardItemCache.get(boardId)
     if (cached && Date.now() - cached.fetchedAt < BOARD_ITEM_TTL) return cached
 
-    // 2. Fall back to SQLite before hitting Monday (survives restarts, instant)
-    if (!cached) {
-      const dbEntry = loadBoardCacheFromDbSync(boardId)
-      if (dbEntry) {
-        // Reset fetchedAt to now so the in-memory TTL starts fresh from this load
-        const entry = { ...dbEntry, fetchedAt: Date.now() }
-        boardItemCache.set(boardId, entry)
-        return entry
-      }
+    // 2. Fall back to DB before hitting Monday (covers cold start AND TTL expiry)
+    const dbEntry = await loadBoardCacheEntry(boardId)
+    if (dbEntry) {
+      // Reset fetchedAt to now so the in-memory TTL starts fresh from this load
+      const entry = { ...dbEntry, fetchedAt: Date.now() }
+      boardItemCache.set(boardId, entry)
+      return entry
     }
   }
 
@@ -226,10 +224,10 @@ async function fetchBoardItems(boardId: string, token: string, force = false): P
 
       const result: BoardCache = { name: meta.name, items, statusColors: meta.statusColors, fetchedAt: Date.now() }
       boardItemCache.set(boardId, result)
-      // Persist to SQLite + update last_synced (non-blocking)
-      setImmediate(() => {
-        saveBoardCacheSync(boardId, result)
-        setCacheMetaSync('last_synced', new Date().toISOString())
+      // Persist to DB + update last_synced (non-blocking)
+      setImmediate(async () => {
+        await saveBoardCache(boardId, result)
+        await setCacheMeta('last_synced', new Date().toISOString())
       })
       return result
     } finally {
@@ -478,16 +476,12 @@ export async function fetchTeamTasks(
   return tasksByUser
 }
 
-export function loadBoardCacheFromDb() {
-  const rows = loadAllBoardCachesSync()
-  warmBoardCacheFromRows(rows)
-}
-
-export function warmBoardCacheFromRows(rows: Array<{ boardId: string; name: string; items: any[]; statusColors: Record<string, string>; fetchedAt: number }>) {
+export async function loadBoardCacheFromDb() {
+  const rows = await loadAllBoardCacheEntries()
   let count = 0
-  for (const { boardId, name, items, statusColors, fetchedAt } of rows) {
+  for (const { boardId, name, items, statusColors } of rows) {
     if (!boardItemCache.has(boardId)) {
-      boardItemCache.set(boardId, { name, items, statusColors, fetchedAt })
+      boardItemCache.set(boardId, { name, items, statusColors, fetchedAt: Date.now() })
       count++
     }
   }
@@ -495,7 +489,7 @@ export function warmBoardCacheFromRows(rows: Array<{ boardId: string; name: stri
 }
 
 export async function incrementalSync(boardIds: string[], token: string): Promise<{ updatedItems: number }> {
-  const lastSynced = getCacheMetaSync('last_synced') ?? new Date(Date.now() - 60_000).toISOString()
+  const lastSynced = await getCacheMeta('last_synced') ?? new Date(Date.now() - 60_000).toISOString()
   const now = new Date().toISOString()
 
   // 1. Fetch activity logs since lastSynced to find changed item IDs per board
@@ -559,14 +553,14 @@ export async function incrementalSync(boardIds: string[], token: string): Promis
 
       const updated: BoardCache = { ...cached, items: Array.from(itemMap.values()), fetchedAt: Date.now() }
       boardItemCache.set(boardId, updated)
-      setImmediate(() => { saveBoardCacheSync(boardId, updated) })
+      setImmediate(async () => { await saveBoardCache(boardId, updated) })
       totalUpdated += freshItems.length
     } catch (err) {
       console.error(`[sync] Item update error for board ${boardId}:`, err)
     }
   }))
 
-  setCacheMetaSync('last_synced', now)
+  await setCacheMeta('last_synced', now)
   return { updatedItems: totalUpdated }
 }
 
