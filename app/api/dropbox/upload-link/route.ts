@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { uploadToDropbox, getDropboxToken } from '@/lib/dropbox'
+import { getDropboxToken } from '@/lib/dropbox'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December']
@@ -16,22 +16,41 @@ function weekFolder(weekEnding: string): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData()
-    const file = formData.get('file') as File
-    const memberName = formData.get('memberName') as string
-    const weekEnding = formData.get('weekEnding') as string
+    const { fileName, memberName, weekEnding } = await req.json()
 
-    if (!file || !memberName || !weekEnding) {
+    if (!fileName || !memberName || !weekEnding) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
     const token = await getDropboxToken()
     const basePath = (process.env.DROPBOX_PATH ?? '/Weekly Reports').replace(/\/$/, '')
     const folder = weekFolder(weekEnding)
-    const buffer = Buffer.from(await file.arrayBuffer())
-    const result = await uploadToDropbox(buffer, file.name, `${basePath}/${folder}/${memberName}`, token)
+    const path = `${basePath}/${folder}/${memberName}/${fileName}`.replace(/\/+/g, '/')
 
-    return NextResponse.json(result)
+    const response = await fetch('https://api.dropboxapi.com/2/files/get_temporary_upload_link', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        commit_info: {
+          path,
+          mode: 'add',
+          autorename: true,
+          mute: false
+        },
+        duration: 3600
+      })
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      return NextResponse.json({ error: `Dropbox link failed: ${errorText}` }, { status: 500 })
+    }
+
+    const data = await response.json()
+    return NextResponse.json({ success: true, link: data.link })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

@@ -42,17 +42,37 @@ export function WorkSampleUpload({ memberName, weekEnding }: WorkSampleUploadPro
   const uploadFile = async (file: File) => {
     setUploads(prev => [...prev, { name: file.name, status: 'uploading' }])
 
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('memberName', memberName)
-    formData.append('weekEnding', weekEnding)
-
     try {
-      const res = await fetch('/api/dropbox/upload', { method: 'POST', body: formData })
-      const data = await res.json()
+      // 1. Get temporary secure upload link from server (avoids size limits, masks token)
+      const linkRes = await fetch('/api/dropbox/upload-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: file.name,
+          memberName,
+          weekEnding,
+        }),
+      })
+      const linkData = await linkRes.json()
+      if (!linkData.success) throw new Error(linkData.error || 'Failed to get upload link')
+
+      // 2. Upload file directly to Dropbox securely matching the file body format
+      const uploadRes = await fetch(linkData.link, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+        },
+        body: file,
+      })
+
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text()
+        throw new Error(`Upload failed: ${errText}`)
+      }
+
       setUploads(prev => prev.map(u =>
         u.name === file.name
-          ? { ...u, status: data.success ? 'success' : 'error', path: data.path, error: data.error }
+          ? { ...u, status: 'success', path: 'Successfully uploaded directly' }
           : u
       ))
     } catch (err) {
