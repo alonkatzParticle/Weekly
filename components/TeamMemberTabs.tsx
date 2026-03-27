@@ -3,7 +3,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { LastWeekSummary } from './LastWeekSummary'
 import { ThisWeekPreview } from './ThisWeekPreview'
-import { TimeTracking } from './TimeTracking'
 import { WorkSampleUpload } from './WorkSampleUpload'
 import { WeeklyFilesPreview } from './WeeklyFilesPreview'
 import type { MondayTask } from '@/lib/monday'
@@ -185,13 +184,6 @@ export function TeamMemberTabs({
               tasksError={tasksError}
               onRefreshTasks={() => fetchAllTasks(true)}
             />
-            {activeMember.is_video_team && (
-              <TimeTracking
-                mondayUserId={activeMember.monday_user_id}
-                weekStart={weekStart}
-                weekEnd={weekEnd}
-              />
-            )}
           </div>
 
           {/* Right Column */}
