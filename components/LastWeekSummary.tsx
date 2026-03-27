@@ -14,6 +14,7 @@ interface LastWeekSummaryProps {
   tasks: MondayTask[]
   tasksLoaded: boolean
   tasksError: string
+  showAI?: boolean
   onRefreshTasks?: () => void
 }
 
@@ -64,6 +65,7 @@ export function LastWeekSummary({
   tasks,
   tasksLoaded,
   tasksError,
+  showAI = false,
   onRefreshTasks,
 }: LastWeekSummaryProps) {
   const [summary, setSummary] = useState('')
@@ -108,11 +110,11 @@ export function LastWeekSummary({
   // Auto-fetch summary once tasks are loaded — keyed on memberId+weekEnd so switching tabs re-fetches
   const summaryKey = `${memberId}-${weekEnd}`
   useEffect(() => {
-    if (tasksLoaded && autoFetchedRef.current !== summaryKey) {
+    if (showAI && tasksLoaded && autoFetchedRef.current !== summaryKey) {
       autoFetchedRef.current = summaryKey
       fetchSummary()
     }
-  }, [tasksLoaded, summaryKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [showAI, tasksLoaded, summaryKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!tasksLoaded)
     return <div className="animate-pulse text-sm text-muted-foreground p-4">Loading tasks...</div>
@@ -120,38 +122,40 @@ export function LastWeekSummary({
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Last Week Summary</CardTitle>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => fetchSummary(true)}
-              disabled={summaryLoading}
-              className="h-7 gap-1 text-xs"
-            >
-              <RefreshCw className={`h-3 w-3 ${summaryLoading ? 'animate-spin' : ''}`} />
-              Regenerate
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <SummaryScroll loading={summaryLoading}>
-            {summaryLoading ? (
-              <div className="space-y-2">
-                <div className="h-4 bg-muted animate-pulse rounded w-3/4" />
-                <div className="h-4 bg-muted animate-pulse rounded w-full" />
-                <div className="h-4 bg-muted animate-pulse rounded w-5/6" />
-              </div>
-            ) : (
-              summary
-                ? <MarkdownText text={summary} />
-                : <p className="text-sm text-muted-foreground">No summary available.</p>
-            )}
-          </SummaryScroll>
-        </CardContent>
-      </Card>
+      {showAI && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Last Week Summary</CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => fetchSummary(true)}
+                disabled={summaryLoading}
+                className="h-7 gap-1 text-xs"
+              >
+                <RefreshCw className={`h-3 w-3 ${summaryLoading ? 'animate-spin' : ''}`} />
+                Regenerate
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <SummaryScroll loading={summaryLoading}>
+              {summaryLoading ? (
+                <div className="space-y-2">
+                  <div className="h-4 bg-muted animate-pulse rounded w-3/4" />
+                  <div className="h-4 bg-muted animate-pulse rounded w-full" />
+                  <div className="h-4 bg-muted animate-pulse rounded w-5/6" />
+                </div>
+              ) : (
+                summary
+                  ? <MarkdownText text={summary} />
+                  : <p className="text-sm text-muted-foreground">No summary available.</p>
+              )}
+            </SummaryScroll>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="pb-3">

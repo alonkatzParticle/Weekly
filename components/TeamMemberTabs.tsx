@@ -119,29 +119,50 @@ export function TeamMemberTabs({
   const thisWeekTasks = memberData?.thisWeek ?? []
   const tasksError = memberData?.error ?? ''
 
+  const [showAI, setShowAI] = useState(false)
+  useEffect(() => {
+    setShowAI(localStorage.getItem('show_ai_summaries') === 'true')
+  }, [])
+
   return (
     <div>
-      {/* Tab List */}
-      <div className="flex gap-1 border-b mb-6 overflow-x-auto">
-        {members.map(member => (
-          <button
-            key={member.id}
-            onClick={() => setActiveTab(member.id)}
-            className={cn(
-              'px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors',
-              activeTab === member.id
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground'
-            )}
-          >
-            {member.name}
-            {member.is_video_team && (
-              <span className="ml-1.5 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
-                Video
-              </span>
-            )}
-          </button>
-        ))}
+      {/* Header and Controls */}
+      <div className="flex items-center justify-between border-b mb-6">
+        {/* Tab List */}
+        <div className="flex gap-1 overflow-x-auto pt-1">
+          {members.map(member => (
+            <button
+              key={member.id}
+              onClick={() => setActiveTab(member.id)}
+              className={cn(
+                'px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors mb-[-2px]',
+                activeTab === member.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground'
+              )}
+            >
+              {member.name}
+              {member.is_video_team && (
+                <span className="ml-1.5 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                  Video
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+        
+        <label className="flex items-center space-x-2 text-xs font-medium text-muted-foreground mr-2 mb-2 cursor-pointer group whitespace-nowrap bg-muted/50 px-2.5 py-1.5 rounded shadow-sm border">
+          <input 
+            type="checkbox" 
+            className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5"
+            checked={showAI}
+            onChange={(e) => {
+              setShowAI(e.target.checked)
+              localStorage.setItem('show_ai_summaries', String(e.target.checked))
+            }}
+          />
+          <span className="group-hover:text-foreground transition-colors">Show AI Summaries</span>
+        </label>
       </div>
 
       {/* Tab Content */}
@@ -154,7 +175,8 @@ export function TeamMemberTabs({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Column */}
           <div className="space-y-6">
-            {/* <LastWeekSummary
+            <LastWeekSummary
+              showAI={showAI}
               memberId={activeMember.id}
               memberName={activeMember.name}
               weekEnd={weekEnd}
@@ -162,7 +184,7 @@ export function TeamMemberTabs({
               tasksLoaded={tasksLoaded}
               tasksError={tasksError}
               onRefreshTasks={() => fetchAllTasks(true)}
-            /> */}
+            />
             {activeMember.is_video_team && (
               <TimeTracking
                 mondayUserId={activeMember.monday_user_id}
@@ -174,7 +196,8 @@ export function TeamMemberTabs({
 
           {/* Right Column */}
           <div className="space-y-6">
-            {/* <ThisWeekPreview
+            <ThisWeekPreview
+              showAI={showAI}
               memberId={activeMember.id}
               memberName={activeMember.name}
               weekEnd={nextWeekEnd}
@@ -182,7 +205,7 @@ export function TeamMemberTabs({
               tasksLoaded={tasksLoaded}
               tasksError={tasksError}
               onRefreshTasks={() => fetchAllTasks(true)}
-            /> */}
+            />
             <WorkSampleUpload memberName={activeMember.name} weekEnding={weekEnd} />
           </div>
         </div>
