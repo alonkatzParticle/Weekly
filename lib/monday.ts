@@ -11,7 +11,7 @@ export interface DailyTask {
   monday_url: string | null
 }
 
-export const COMPLETED_STATUSES = ['approved', 'completed', 'done', 'for approval', 'sent to client']
+export const COMPLETED_STATUSES = ['approved', 'completed', 'done', 'for approval', 'sent to client', 'upload complete']
 
 export interface MondayTask {
   id: string
@@ -702,101 +702,3 @@ export async function fetchDailyActivity(
   return { completedToday: completedTasks, inProgress: inProgressTasks }
 }
 
-export async function fetchTimeTracking(
-  boardIds: string[],
-  mondayUserId: string,
-  token: string,
-  weekStart: string,
-  weekEnd: string
-): Promise<{ currentWeek: number; history: { weekEnding: string; hours: number }[] }> {
-  let totalHours = 0
-  const weekMap: Record<string, number> = {}
-
-  for (const boardId of boardIds) {
-    const query = `
-      query {
-        boards(ids: [${boardId}]) {
-          items_page(limit: 500) {
-            items {
-              column_values {
-                id
-                type
-                text
-                value
-              }
-            }
-          }
-        }
-      }
-    `
-
-    try {
-      const data = await mondayQuery(query, token)
-      const items = data?.boards?.[0]?.items_page?.items ?? []
-
-      for (const item of items) {
-        const cols = item.column_values ?? []
-        const personCols = cols.filter((c: any) =>
-          c.type === 'multiple-person' || c.type === 'people' || c.id === 'person' || c.id === 'people'
-        )
-        const timeTrackCol = cols.find((c: any) => c.id === 'duration_mkynps36')
-          ?? cols.find((c: any) => c.type === 'time_tracking')
-
-        if (!timeTrackCol?.value) continue
-
-        let isAssigned = false
-        for (const personCol of personCols) {
-          if (!personCol?.value) continue
-          try {
-            const pv = JSON.parse(personCol.value)
-            if (pv?.personsAndTeams?.some((p: any) => String(p.id) === String(mondayUserId))) {
-              isAssigned = true
-              break
-            }
-          } catch {}
-        }
-
-        if (!isAssigned) continue
-
-        try {
-          const ttVal = JSON.parse(timeTrackCol.value)
-          const entries: any[] = ttVal?.additional_value ?? []
-
-          for (const entry of entries) {
-            const startTime = entry?.started_at ? new Date(entry.started_at) : null
-            const endTime = entry?.ended_at ? new Date(entry.ended_at) : null
-            if (!startTime || !endTime) continue
-
-            const hours = (endTime.getTime() - startTime.getTime()) / 3600000
-            const entryDate = startTime.toISOString().split('T')[0]
-
-            if (entryDate >= weekStart && entryDate <= weekEnd) {
-              totalHours += hours
-            }
-
-            const weekEndDate = getWeekEndForDate(startTime)
-            if (!weekMap[weekEndDate]) weekMap[weekEndDate] = 0
-            weekMap[weekEndDate] += hours
-          }
-        } catch {}
-      }
-    } catch (err) {
-      console.error(`Error fetching time tracking for board ${boardId}:`, err)
-    }
-  }
-
-  const history = Object.entries(weekMap)
-    .map(([weekEnding, hours]) => ({ weekEnding, hours: Math.round(hours * 10) / 10 }))
-    .sort((a, b) => a.weekEnding.localeCompare(b.weekEnding))
-    .slice(-6)
-
-  return { currentWeek: Math.round(totalHours * 10) / 10, history }
-}
-
-function getWeekEndForDate(date: Date): string {
-  const d = new Date(date)
-  const day = d.getDay()
-  const saturday = new Date(d)
-  saturday.setDate(d.getDate() + (6 - day))
-  return saturday.toISOString().split('T')[0]
-}
