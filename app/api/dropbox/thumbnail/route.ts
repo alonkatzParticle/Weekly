@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDropboxToken } from '@/lib/dropbox'
+import { getDropboxToken, encodeDropboxArg } from '@/lib/dropbox'
 
 export async function GET(req: NextRequest) {
   const path = req.nextUrl.searchParams.get('path')
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
       // Proxy file content with Range header passthrough for video seeking
       const headers: Record<string, string> = {
         'Authorization': `Bearer ${token}`,
-        'Dropbox-API-Arg': JSON.stringify({ url, path: relPath }),
+        'Dropbox-API-Arg': encodeDropboxArg({ url, path: relPath }),
       }
       const rangeHeader = req.headers.get('range')
       if (rangeHeader) headers['Range'] = rangeHeader
@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
-        'Dropbox-API-Arg': JSON.stringify({
+        'Dropbox-API-Arg': encodeDropboxArg({
           resource: { '.tag': 'link', url, path: relPath },
           format: { '.tag': 'jpeg' },
           size: { '.tag': 'w640h480' },
@@ -93,7 +93,7 @@ export async function GET(req: NextRequest) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
-      'Dropbox-API-Arg': JSON.stringify({
+      'Dropbox-API-Arg': encodeDropboxArg({
         resource: { '.tag': 'path', path },
         format: { '.tag': 'jpeg' },
         size: { '.tag': 'w640h480' },

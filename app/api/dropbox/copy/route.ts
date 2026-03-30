@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDropboxToken } from '@/lib/dropbox'
+import { getDropboxToken, encodeDropboxArg } from '@/lib/dropbox'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December']
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
-        'Dropbox-API-Arg': JSON.stringify({ url: sharedUrl, path: relPath }),
+        'Dropbox-API-Arg': encodeDropboxArg({ url: sharedUrl, path: relPath }),
       },
     })
     if (!downloadRes.ok) {
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/octet-stream',
-        'Dropbox-API-Arg': JSON.stringify({ path: toPath, mode: 'add', autorename: true }),
+        'Dropbox-API-Arg': encodeDropboxArg({ path: toPath, mode: 'add', autorename: true }),
       },
       body: downloadRes.body,
       // @ts-ignore — duplex required for streaming body in Node 18+

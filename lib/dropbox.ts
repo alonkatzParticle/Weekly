@@ -2,6 +2,12 @@
 let cachedToken: string | null = null
 let tokenExpiresAt = 0
 
+export function encodeDropboxArg(arg: any): string {
+  return JSON.stringify(arg).replace(/[\u007F-\uFFFF]/g, chr => 
+    '\\u' + ('0000' + chr.charCodeAt(0).toString(16)).slice(-4)
+  )
+}
+
 export async function getDropboxToken(): Promise<string> {
   const refreshToken = process.env.DROPBOX_REFRESH_TOKEN
   const appKey = process.env.DROPBOX_APP_KEY
@@ -48,7 +54,7 @@ export async function uploadToDropbox(
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${accessToken}`,
-      'Dropbox-API-Arg': JSON.stringify({
+      'Dropbox-API-Arg': encodeDropboxArg({
         path,
         mode: 'add',
         autorename: true,
